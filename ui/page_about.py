@@ -14,7 +14,7 @@ import platform
 from typing import NamedTuple
 
 from PySide6 import __version__ as PYSIDE_VERSION
-from PySide6.QtCore import Qt, Signal, qVersion
+from PySide6.QtCore import Qt, QTimer, Signal, qVersion
 from PySide6.QtGui import QFont, QPixmap
 from PySide6.QtWidgets import (
     QGridLayout,
@@ -213,47 +213,57 @@ class AboutPage(QWidget):
         row.addLayout(col, 1)
         return hero
 
+    def _restore_update_state(self) -> None:
+        """页面会被重建（跟随系统主题延迟应用），重建后把上次结果接回去。"""
+        from core import updater
+
+        info = updater.last_result()
+        if info is None:
+            return
+        if not info.ok:
+            self.btn_update.setText("检查失败，重试")
+            self.btn_update.setToolTip(info.error or "")
+        elif info.has_update:
+            self.btn_update.setText(f"去下载 v{info.latest}")
+            self.btn_update.setToolTip(info.notes or "")
+        else:
+            self.btn_update.setText("已是最新")
+            self.btn_update.setToolTip(f"当前 {version.text()}")
+
     def _check_update(self) -> None:
         """检查更新。全应用唯一的联网动作，只在点按钮时跑。
 
-        同步执行 + 先刷一次界面：请求通常 200ms 内返回，超时上限 4 秒。
-        用线程回传会踩跨线程碰控件的坑，不值得为省几百毫秒冒险。
+        全程同步：`repaint()` 强制立刻重绘（不跑事件循环），然后阻塞请求。
+        之前用过 QThread、processEvents、singleShot 三种异步写法，
+        都会在回调阶段碰到控件已被销毁的问题；同步写最土但最稳。
+        请求通常 200ms 内返回，超时上限 4 秒。
         """
         if getattr(self, "_checking", False):
             return
         self._checking = True
         self.btn_update.setEnabled(False)
-        self.lbl_update.setText("正在检查…")
-        self.lbl_update.setStyleSheet(f"color: {T.TEXT_DIM};")
-
-        from PySide6.QtWidgets import QApplication
-
-        QApplication.processEvents()
+        self.btn_update.setText("正在检查…")
+        self.btn_update.repaint()
 
         from core import updater
 
         info = updater.check()
+
         self._checking = False
         self.btn_update.setEnabled(True)
 
         if not info.ok:
-            reason = info.error or "未知原因"
-            short = reason.split("：")[-1][:40]
-            self.lbl_update.setText(f"检查失败：{short}")
-            self.lbl_update.setToolTip(reason)
-            self.lbl_update.setStyleSheet(f"color: {T.TEXT_DIM};")
+            self.btn_update.setText("检查失败，重试")
+            self.btn_update.setToolTip(info.error or "")
             return
 
         if not info.has_update:
-            self.lbl_update.setText("已是最新")
-            self.lbl_update.setToolTip("")
-            self.lbl_update.setStyleSheet(f"color: {T.GREEN};")
+            self.btn_update.setText("已是最新")
+            self.btn_update.setToolTip(f"当前 {version.text()}")
             return
 
-        self.lbl_update.setText(f"发现 v{info.latest}")
-        self.lbl_update.setToolTip(info.notes or "")
-        self.lbl_update.setStyleSheet(f"color: {T.AMBER};")
-        self.btn_update.setText("去下载")
+        self.btn_update.setText(f"去下载 v{info.latest}")
+        self.btn_update.setToolTip(info.notes or "")
         try:
             self.btn_update.clicked.disconnect()
         except (RuntimeError, TypeError):
@@ -300,12 +310,17 @@ class AboutPage(QWidget):
         # 界面只给一个按钮，不暴露具体地址。
         card.body().addSpacing(4)
         upd_row = QWidget()
+        upd_row.setFixedHeight(26)
         upd = QHBoxLayout(upd_row)
         upd.setContentsMargins(0, 0, 0, 0)
         upd.setSpacing(10)
-        upd.addWidget(label("检查更新", 12, T.TEXT, QFont.Medium), 0)
-        self.lbl_update = label("", 11, T.TEXT_DIM)
-        upd.addWidget(self.lbl_update, 0)
+
+        # 左边叫「版本」而不是「检查更新」：否则和右边按钮的文字重复，
+        # 一行里出现两次「检查更新」，看着像写错了
+        ver_name = label("版本", 12, T.TEXT, QFont.Medium)
+        ver_name.setFixedWidth(62)
+        upd.addWidget(ver_name, 0)
+
         upd.addStretch(1)
 
         self.btn_update = QPushButton("检查更新")
@@ -315,6 +330,7 @@ class AboutPage(QWidget):
         self.btn_update.clicked.connect(self._check_update)
         upd.addWidget(self.btn_update, 0)
         card.body().addWidget(upd_row)
+        self._restore_update_state()
         return card
 
     def _channel_row(self, channel: Channel) -> QWidget:
@@ -342,6 +358,8 @@ class AboutPage(QWidget):
         addr.setTextInteractionFlags(Qt.TextSelectableByMouse)
         addr.setToolTip(f"{channel.url}\n{channel.note}")
         row.addWidget(addr, 0)
+        # 按钮靠右：伸展项放在地址后面，否则两个按钮会紧贴地址挤在行中间
+        row.addStretch(1)
 
         btn_open = QPushButton("打开")
         btn_open.setObjectName("Tonal")
@@ -356,7 +374,6 @@ class AboutPage(QWidget):
         btn_copy.setCursor(Qt.PointingHandCursor)
         btn_copy.clicked.connect(lambda _c=False, url=channel.url: self._copy_url(url))
         row.addWidget(btn_copy, 0)
-        row.addStretch(1)
         return box
 
     def _env_card(self) -> Card:

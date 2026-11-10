@@ -25,6 +25,9 @@ _EXE_KEY = "windows-manager/latest/Windows-Manager.exe"
 
 TIMEOUT = 8
 
+# 上一次检查结果。页面会因为换肤被重建，重建后要能把结果接回去。
+_LAST: UpdateInfo | None = None
+
 
 @dataclass
 class UpdateInfo:
@@ -73,6 +76,8 @@ def check() -> UpdateInfo:
     用户开着代理软件时直连请求会被塞进代理，而代理未必放行这个域名 ——
     这就是「开发时能检查、打包后检查失败」最常见的原因。
     """
+    global _LAST
+
     url = f"https://{_HOST}/{_MANIFEST_KEY}"
     data = None
     errors = []
@@ -90,7 +95,7 @@ def check() -> UpdateInfo:
     if not latest:
         return UpdateInfo(ok=False, error="版本信息缺少 version 字段")
 
-    return UpdateInfo(
+    _LAST = UpdateInfo(
         ok=True,
         latest=latest,
         notes=str(data.get("notes", "")).strip(),
@@ -98,3 +103,9 @@ def check() -> UpdateInfo:
         url=f"https://{_HOST}/{_EXE_KEY}",
         size=str(data.get("size", "")).strip(),
     )
+    return _LAST
+
+
+def last_result() -> UpdateInfo | None:
+    """上一次检查的结果。页面重建后用它恢复按钮状态。"""
+    return _LAST
