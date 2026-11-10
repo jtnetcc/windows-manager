@@ -53,18 +53,38 @@ def _tuple(text: str) -> tuple[int, ...]:
     return tuple(parts)
 
 
-def check() -> UpdateInfo:
-    """拉取最新版本信息。任何异常都转成 ok=False，不抛给界面。"""
-    url = f"https://{_HOST}/{_MANIFEST_KEY}"
+def _fetch(url: str, use_proxy: bool) -> dict:
     request = urllib.request.Request(url)
     request.add_header("User-Agent", f"WindowsManager/{version.VERSION}")
-    try:
-        with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
-            data = json.loads(response.read().decode("utf-8"))
-    except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        return UpdateInfo(ok=False, error=f"网络不可用：{exc}")
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        return UpdateInfo(ok=False, error="版本信息格式异常")
+    # 显式控制代理：OSS 在 cn-beijing，直连最快；
+    # 但有些环境（公司网关、代理软件）必须走代理，所以两种都试一遍。
+    if use_proxy:
+        opener = urllib.request.build_opener()
+    else:
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with opener.open(request, timeout=TIMEOUT) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def check() -> UpdateInfo:
+    """拉取最新版本信息。任何异常都转成 ok=False，不抛给界面。
+
+    先直连、再走系统代理。Windows 上 urllib 默认会读注册表里的系统代理，
+    用户开着代理软件时直连请求会被塞进代理，而代理未必放行这个域名 ——
+    这就是「开发时能检查、打包后检查失败」最常见的原因。
+    """
+    url = f"https://{_HOST}/{_MANIFEST_KEY}"
+    data = None
+    errors = []
+    for use_proxy in (False, True):
+        try:
+            data = _fetch(url, use_proxy)
+            break
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            errors.append(f"{'代理' if use_proxy else '直连'}：{exc}")
+
+    if data is None:
+        return UpdateInfo(ok=False, error="；".join(errors))
 
     latest = str(data.get("version", "")).strip()
     if not latest:
