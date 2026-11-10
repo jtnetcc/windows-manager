@@ -334,6 +334,39 @@ class MainWindow(QMainWindow):
 
     # ---------------------------------------------------------- 提示框
 
+    def _live_tip(self):
+        """取可用的提示框。换肤重建后旧的 C++ 对象可能已被销毁，
+        这时 eventFilter 里一碰就抛异常，而异常会让**整个鼠标事件被吞掉** ——
+        表现就是「点击导航没反应」。所以每次用之前确认一下，坏了就重建。
+        """
+        try:
+            self._tip.isVisible()
+        except RuntimeError:
+            self._tip = tooltip.Tip()
+        return self._tip
+
+    def _build_toast(self) -> None:
+        """浮层提示只建一次，重建界面时复用，否则每次换肤都会多留一个。"""
+        self._toast = QLabel(self)
+        self._toast.setAlignment(Qt.AlignCenter)
+        self._toast.hide()
+        self._toast_timer = QTimer(self)
+        self._toast_timer.setSingleShot(True)
+        self._toast_timer.timeout.connect(self._toast.hide)
+
+    # ---------------------------------------------------------- 提示框
+
+    def _live_tip(self):
+        """取可用的提示框。换肤重建后旧的 C++ 对象可能已被销毁，
+        这时 eventFilter 里一碰就抛异常，而异常会让**整个鼠标事件被吞掉** ——
+        表现就是「点击导航没反应」。所以每次用之前确认一下，坏了就重建。
+        """
+        try:
+            self._tip.isVisible()
+        except RuntimeError:
+            self._tip = tooltip.Tip()
+        return self._tip
+
     def eventFilter(self, obj, event) -> bool:  # noqa: N802 (Qt 命名)
         """接管全应用的 ToolTip 事件，交给自绘提示框。
 
