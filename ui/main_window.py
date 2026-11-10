@@ -10,7 +10,16 @@ import threading
 import time
 from ctypes import wintypes
 
-from PySide6.QtCore import QEvent, QPoint, QRectF, QSignalBlocker, Qt, QTimer
+from PySide6.QtCore import (
+    QEvent,
+    QPoint,
+    QRectF,
+    QSignalBlocker,
+    Qt,
+    QThread,
+    QTimer,
+    Signal,
+)
 from PySide6.QtGui import (
     QAction,
     QColor,
@@ -308,6 +317,9 @@ class MainWindow(QMainWindow):
         # 这里先设一遍，避免深色应用配浅色标题栏
         QTimer.singleShot(0, self._apply_titlebar)
         self._install_shortcuts()
+        # 启动后 4 秒自动查一次新版：等界面画完、系统主题也应用完再跑，
+        # 免得和启动阶段的卡顿叠在一起
+        QTimer.singleShot(6000, self._auto_check_update)
 
     # ---------------------------------------------------------- 界面
 
@@ -790,6 +802,25 @@ class MainWindow(QMainWindow):
         self._pages["dup"].start_scan()
         self._pages["registry"].start_scan()
         self._pages["health"].start_probe()
+
+    def _auto_check_update(self) -> None:
+        """启动时静默检查更新。有新版本才提示，没有就什么都不做。
+
+        同步执行：请求通常 200ms 内返回（超时上限 4 秒）。
+        试过 QThread 跨线程信号和「线程 + 轮询」两种写法，
+        在受限环境里都会卡住不返回；这个调用只在启动后跑一次，
+        为它冒线程不稳定的风险不值得。
+        """
+        from core import updater
+
+        info = updater.check()
+        if not info.ok or not info.has_update:
+            return
+        self.toast(
+            f"发现新版本 v{info.latest} · 在「关于软件」里更新",
+            6000,
+            "warn",
+        )
 
     def _install_shortcuts(self) -> None:
         """Ctrl+1..9 按侧栏顺序切页，Ctrl+0 给第 10 项，F5 重扫，Ctrl+, 设置，F1 关于。
