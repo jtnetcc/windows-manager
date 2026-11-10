@@ -83,10 +83,9 @@ def main() -> int:
     if do_github and not (os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")):
         missing.append("GH_TOKEN")
     if do_oss:
-        if not os.environ.get("OSS_AK"):
-            missing.append("OSS_AK")
-        if not os.environ.get("OSS_SK"):
-            missing.append("OSS_SK")
+        for name in ("OSS_AK", "OSS_SK", "OSS_BUCKET", "OSS_ENDPOINT"):
+            if not os.environ.get(name):
+                missing.append(name)
     if missing:
         print("缺少环境变量：" + "、".join(missing))
         return 1
@@ -138,8 +137,9 @@ def main() -> int:
     if do_github:
         print(f"  源码：https://github.com/{REPO}")
     if do_oss:
-        endpoint = os.environ.get("OSS_ENDPOINT", "jtnetcc.oss-cn-beijing.aliyuncs.com")
-        print(f"  下载：https://{endpoint}/windows-manager/latest/Windows-Manager.exe")
+        endpoint = os.environ.get("OSS_ENDPOINT", "")
+        if endpoint:
+            print(f"  下载：https://{endpoint}/windows-manager/latest/Windows-Manager.exe")
     print(f"  回滚：python tools/releases.py --to {version.VERSION}")
     return 0
 
