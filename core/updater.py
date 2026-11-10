@@ -17,9 +17,34 @@ from dataclasses import dataclass
 
 from . import version
 
-# 分发地址。base64 只是避免明文出现在二进制里被随手 grep 到，
-# 不是加密 —— 真要藏住只能靠服务端鉴权。
-_HOST = base64.b64decode("anRuZXRjYy5vc3MtY24tYmVpamluZy5hbGl5dW5jcy5jb20=").decode()
+# 分发地址做了异或混淆，密钥和密文分开存放，运行时才拼出来。
+#
+# 说明白：**这只是提高破解门槛，不是加密**。客户端里能拼出来的东西，
+# 逆向的人一定能拼出来（密钥也在同一个 exe 里）。它挡掉的是
+# `strings 软件.exe` 直接搜域名这类最省事的办法。
+#
+# 真正值得防的不是「地址被看见」，而是「更新包被替换」。那个靠服务端：
+# HTTPS + 对象存储的 ACL + 发布流程控制，客户端侧无能为力。
+_KEY = bytes((0x9E, 0x3D, 0x71, 0xC4, 0x2B, 0x88, 0xF5, 0x16))
+_ENC = bytes(
+    (
+        0xF4, 0x49, 0x1F, 0xA1, 0x5F, 0xEB, 0x96, 0x38,
+        0xF1, 0x4E, 0x02, 0xE9, 0x48, 0xE6, 0xD8, 0x74,
+        0xFB, 0x54, 0x1B, 0xAD, 0x45, 0xEF, 0xDB, 0x77,
+        0xF2, 0x54, 0x08, 0xB1, 0x45, 0xEB, 0x86, 0x38,
+        0xFD, 0x52, 0x1C,
+    )
+)
+
+
+def _host() -> str:
+    """运行时还原分发域名。"""
+    return bytes(
+        byte ^ _KEY[index % len(_KEY)] for index, byte in enumerate(_ENC)
+    ).decode()
+
+
+_HOST = _host()
 _MANIFEST_KEY = "windows-manager/latest/version.json"
 _EXE_KEY = "windows-manager/latest/Windows-Manager.exe"
 
