@@ -1,0 +1,1206 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>Windows系统管家 · UI 设计稿（Windows 11 Fluent）</title>
+<style>
+:root[data-theme="dark"]{
+  --mica:#202020; --layer:#272727; --card:#2b2b2b; --card-hover:#323232;
+  --stroke:#3d3d3d; --stroke-soft:#343434; --stroke-strong:#4a4a4a;
+  --text:#ffffff; --text-2:#c8c8c8; --text-3:#8f8f8f; --text-4:#6b6b6b;
+  --accent:#4cc2ff; --on-accent:#00243a; --accent-soft:rgba(76,194,255,.14);
+  --ok:#6ccb5f; --warn:#f2c14e; --err:#ff99a4; --info:#7db8ff;
+  --shadow:0 8px 24px rgba(0,0,0,.45);
+  --chart-fill:rgba(76,194,255,.20);
+}
+:root[data-theme="light"]{
+  --mica:#f3f3f3; --layer:#f9f9f9; --card:#ffffff; --card-hover:#f6f6f6;
+  --stroke:#e3e3e3; --stroke-soft:#ececec; --stroke-strong:#d6d6d6;
+  --text:#1a1a1a; --text-2:#5d5d5d; --text-3:#8b8b8b; --text-4:#a8a8a8;
+  --accent:#0067c0; --on-accent:#ffffff; --accent-soft:rgba(0,103,192,.09);
+  --ok:#0f7b0f; --warn:#9d5d00; --err:#c42b1c; --info:#005fb8;
+  --shadow:0 8px 24px rgba(0,0,0,.12);
+  --chart-fill:rgba(0,103,192,.14);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:var(--mica); color:var(--text);
+  font-family:"Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",system-ui,sans-serif;
+  font-size:14px; line-height:1.5; padding:32px 28px 80px;
+  transition:background .2s,color .2s;
+}
+.doc{max-width:1120px;margin:0 auto}
+h1{font-size:30px;font-weight:600;letter-spacing:-.2px}
+h2{font-size:20px;font-weight:600;margin:44px 0 6px;display:flex;align-items:center;gap:10px}
+h2 .num{font-size:12px;font-weight:600;color:var(--accent);background:var(--accent-soft);
+  padding:2px 8px;border-radius:20px;letter-spacing:.4px}
+h3{font-size:15px;font-weight:600;margin:22px 0 8px;color:var(--text)}
+p.lead{color:var(--text-2);margin-top:8px;max-width:760px}
+p.note{color:var(--text-3);font-size:13px;margin-top:10px;max-width:860px}
+code{font-family:"Cascadia Mono",Consolas,monospace;font-size:12.5px;
+  background:var(--layer);border:1px solid var(--stroke-soft);padding:1px 6px;border-radius:4px}
+
+/* ---------- 页头 ---------- */
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;
+  padding-bottom:22px;border-bottom:1px solid var(--stroke)}
+.top .meta{color:var(--text-3);font-size:13px;margin-top:6px}
+.themebtn{height:32px;padding:0 14px;border-radius:4px;border:1px solid var(--stroke);
+  border-bottom-color:var(--stroke-strong);background:var(--card);color:var(--text);
+  font-size:13px;cursor:pointer;font-family:inherit}
+.themebtn:hover{background:var(--card-hover)}
+
+/* ---------- 目录 ---------- */
+.toc{display:flex;flex-wrap:wrap;gap:6px;margin-top:20px}
+.toc a{font-size:12.5px;color:var(--text-2);text-decoration:none;padding:5px 11px;
+  border:1px solid var(--stroke);border-radius:16px;background:var(--card)}
+.toc a:hover{color:var(--accent);border-color:var(--accent)}
+
+/* ---------- 令牌表 ---------- */
+.tokens{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px}
+.swatch{border:1px solid var(--stroke);border-radius:8px;overflow:hidden;background:var(--card)}
+.swatch .chip{height:52px;border-bottom:1px solid var(--stroke)}
+.swatch .info{padding:8px 10px}
+.swatch .name{font-size:12.5px;font-weight:600}
+.swatch .val{font-size:11.5px;color:var(--text-3);font-family:"Cascadia Mono",monospace}
+.spec{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px}
+.spec div{border:1px solid var(--stroke);border-radius:8px;padding:12px 14px;background:var(--card)}
+.spec b{display:block;font-size:12px;color:var(--text-3);font-weight:600;letter-spacing:.4px;margin-bottom:4px}
+.spec span{font-size:13.5px}
+
+/* ---------- 窗口模拟 ---------- */
+.win{width:1000px;height:700px;background:var(--mica);border:1px solid var(--stroke);
+  border-radius:8px;overflow:hidden;box-shadow:var(--shadow);display:flex;flex-direction:column;
+  margin-top:14px;font-size:13px}
+.win.small{height:auto}
+.titlebar{height:38px;display:flex;align-items:center;justify-content:space-between;
+  padding:0 4px 0 14px;background:var(--layer);border-bottom:1px solid var(--stroke-soft);flex:0 0 auto}
+.titlebar .l{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--text-2)}
+.appicon{width:16px;height:16px;border-radius:4px;background:var(--accent);opacity:.9}
+.wctl{display:flex}
+.wctl span{width:44px;height:34px;display:grid;place-items:center;color:var(--text-3);font-size:12px}
+.wctl span:hover{background:var(--card-hover);color:var(--text)}
+.wbody{flex:1;display:flex;min-height:0}
+
+/* ---------- 导航 ---------- */
+.nav{width:228px;flex:0 0 228px;background:var(--layer);border-right:1px solid var(--stroke-soft);
+  padding:6px 6px 8px;display:flex;flex-direction:column;overflow:hidden}
+.nav-group{font-size:11px;color:var(--text-4);padding:8px 12px 3px;letter-spacing:.6px;font-weight:600}
+.nav-item{display:flex;align-items:center;gap:11px;height:34px;padding:0 10px;border-radius:5px;
+  color:var(--text-2);position:relative;cursor:default;margin-bottom:1px}
+.nav-item .ico{width:16px;height:16px;flex:0 0 16px;stroke:currentColor;fill:none;
+  stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round;opacity:.85}
+.nav-item:hover{background:var(--card-hover);color:var(--text)}
+.nav-item.active{background:var(--card);color:var(--text);font-weight:600}
+.nav-item.active::before{content:"";position:absolute;left:0;top:50%;transform:translateY(-50%);
+  width:3px;height:16px;border-radius:2px;background:var(--accent)}
+.nav-item.active .ico{opacity:1;stroke:var(--accent)}
+.nav-foot{margin-top:auto;border-top:1px solid var(--stroke-soft);padding-top:6px}
+
+/* ---------- 内容区 ---------- */
+.content{flex:1;padding:20px 24px 18px;overflow:hidden;display:flex;flex-direction:column;min-width:0}
+.phead{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:14px}
+.phead .t{font-size:26px;font-weight:600;letter-spacing:-.3px;line-height:1.2}
+.phead .s{font-size:12.5px;color:var(--text-3);margin-top:3px}
+.phead .actions{display:flex;gap:8px}
+
+/* ---------- 卡片 ---------- */
+.grid{display:grid;gap:12px}
+.g4{grid-template-columns:repeat(4,1fr)}
+.g2{grid-template-columns:1fr 1fr}
+.g21{grid-template-columns:2fr 1fr}
+.g12{grid-template-columns:1fr 2fr}
+.card{background:var(--card);border:1px solid var(--stroke);border-radius:8px;
+  padding:14px;display:flex;flex-direction:column;min-width:0}
+.card.flat{background:var(--layer)}
+.chead{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.chead .ct{font-size:14px;font-weight:600}
+.chead .cs{font-size:11.5px;color:var(--text-3);margin-left:auto;font-weight:400}
+.chead .ico{width:15px;height:15px;stroke:var(--accent);fill:none;stroke-width:1.4;
+  stroke-linecap:round;stroke-linejoin:round;flex:0 0 15px}
+.chev{width:14px;height:14px;stroke:var(--text-3);fill:none;stroke-width:1.4}
+
+/* ---------- KPI ---------- */
+.kpi{background:var(--card);border:1px solid var(--stroke);border-radius:8px;padding:12px 14px;
+  display:flex;flex-direction:column;gap:2px;min-width:0}
+.kpi .kl{font-size:12px;color:var(--text-3);display:flex;align-items:center;gap:6px}
+.kpi .kl .ico{width:13px;height:13px;stroke:var(--text-3);fill:none;stroke-width:1.4;
+  stroke-linecap:round;stroke-linejoin:round}
+.kpi .kv{font-size:26px;font-weight:600;letter-spacing:-.5px;line-height:1.25}
+.kpi .kv small{font-size:14px;font-weight:500;color:var(--text-3);margin-left:1px}
+.kpi .ks{font-size:11.5px;color:var(--text-3)}
+
+/* ---------- 图表 ---------- */
+.chart{flex:1;min-height:0;position:relative}
+.chart svg{width:100%;height:100%;display:block}
+.axis{font-size:10px;fill:var(--text-4)}
+
+/* ---------- 条 ---------- */
+.bar{height:6px;border-radius:3px;background:var(--stroke);overflow:hidden;flex:1}
+.bar i{display:block;height:100%;border-radius:3px;background:var(--accent)}
+.bar i.ok{background:var(--ok)} .bar i.warn{background:var(--warn)} .bar i.err{background:var(--err)}
+
+/* ---------- 列表 ---------- */
+.rows{display:flex;flex-direction:column;gap:1px}
+.row{display:flex;align-items:center;gap:8px;height:25px;font-size:12.5px}
+.row .n{color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .b{font-size:10.5px;color:var(--text-4);background:var(--layer);border-radius:9px;padding:0 6px}
+.row .v{margin-left:auto;color:var(--text-2);font-variant-numeric:tabular-nums}
+.row .v.hot{color:var(--warn)}
+
+/* ---------- 表格 ---------- */
+.tbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.tbl th{text-align:left;font-size:11.5px;font-weight:600;color:var(--text-3);
+  padding:0 8px 8px;border-bottom:1px solid var(--stroke);white-space:nowrap}
+.tbl td{padding:0 8px;height:28px;border-bottom:1px solid var(--stroke-soft);color:var(--text-2);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tbl tr:last-child td{border-bottom:none}
+.tbl td.strong{color:var(--text)}
+.tbl td.num{text-align:right;font-variant-numeric:tabular-nums}
+.tbl .mini{height:4px;width:64px;border-radius:2px;background:var(--stroke);display:inline-block;
+  vertical-align:middle;overflow:hidden}
+.tbl .mini i{display:block;height:100%;background:var(--accent);border-radius:2px}
+
+/* ---------- 控件 ---------- */
+.btn{height:32px;padding:0 14px;border-radius:4px;border:1px solid var(--stroke);
+  border-bottom-color:var(--stroke-strong);background:var(--card);color:var(--text);
+  font-size:13px;font-family:inherit;display:inline-flex;align-items:center;gap:7px;cursor:default}
+.btn:hover{background:var(--card-hover)}
+.btn .ico{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.5;
+  stroke-linecap:round;stroke-linejoin:round}
+.btn.primary{background:var(--accent);border:none;color:var(--on-accent);font-weight:600}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.subtle{background:transparent;border-color:transparent;color:var(--text-2)}
+.btn.subtle:hover{background:var(--card-hover);color:var(--text)}
+
+.toggle{width:40px;height:20px;border-radius:10px;background:var(--stroke-strong);position:relative;
+  flex:0 0 40px;display:inline-block;vertical-align:middle}
+.toggle i{position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;
+  background:var(--text-3)}
+.toggle.on{background:var(--accent)}
+.toggle.on i{left:23px;background:var(--on-accent)}
+
+.check{width:16px;height:16px;border-radius:4px;border:1.4px solid var(--stroke-strong);
+  display:inline-grid;place-items:center;flex:0 0 16px}
+.check.on{background:var(--accent);border-color:var(--accent)}
+.check.on::after{content:"";width:8px;height:4px;border-left:2px solid var(--on-accent);
+  border-bottom:2px solid var(--on-accent);transform:rotate(-45deg) translate(1px,-1px)}
+
+.search{height:30px;border-radius:4px;border:1px solid var(--stroke);
+  border-bottom-color:var(--stroke-strong);background:var(--card);display:flex;align-items:center;
+  gap:8px;padding:0 10px;font-size:12.5px;color:var(--text-3);width:210px}
+.combo{height:30px;border-radius:4px;border:1px solid var(--stroke);
+  border-bottom-color:var(--stroke-strong);background:var(--card);display:inline-flex;
+  align-items:center;gap:8px;padding:0 10px;font-size:12.5px;color:var(--text)}
+.combo .chev{margin-left:6px}
+
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:2px 9px;
+  border-radius:12px;background:var(--accent-soft);color:var(--accent);font-weight:600}
+.pill.gray{background:var(--layer);color:var(--text-3)}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+.dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.err{background:var(--err)}
+
+/* ---------- 分数环 ---------- */
+.ring{position:relative;width:150px;height:150px;margin:0 auto}
+.ring svg{transform:rotate(135deg)}
+.ring .val{position:absolute;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:0}
+.ring .val b{font-size:38px;font-weight:600;letter-spacing:-1px;line-height:1}
+.ring .val span{font-size:12px;color:var(--text-3);margin-top:4px}
+
+/* ---------- 设置行 ---------- */
+.setrow{display:flex;align-items:center;gap:16px;padding:9px 0;
+  border-bottom:1px solid var(--stroke-soft)}
+.setrow:last-child{border-bottom:none}
+.setrow .l{flex:1;min-width:0}
+.setrow .l b{font-size:13px;font-weight:500;display:block}
+.setrow .l span{font-size:11.5px;color:var(--text-3)}
+
+/* ---------- 标注 ---------- */
+.anno{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px}
+.anno div{border-left:2px solid var(--accent);padding:2px 0 2px 12px;font-size:12.5px;color:var(--text-2)}
+.anno b{color:var(--text);font-weight:600}
+</style>
+</head>
+<body>
+<div class="doc">
+
+<svg style="display:none">
+  <symbol id="i-home" viewBox="0 0 16 16"><path d="M2.5 7.2 8 2.5l5.5 4.7V13a.8.8 0 0 1-.8.8H3.3a.8.8 0 0 1-.8-.8Z"/></symbol>
+  <symbol id="i-cpu" viewBox="0 0 16 16"><rect x="4.2" y="4.2" width="7.6" height="7.6" rx="1.2"/><path d="M6.5 2v2.2M9.5 2v2.2M6.5 11.8V14M9.5 11.8V14M2 6.5h2.2M2 9.5h2.2M11.8 6.5H14M11.8 9.5H14"/></symbol>
+  <symbol id="i-mem" viewBox="0 0 16 16"><rect x="2" y="4.5" width="12" height="7" rx="1"/><path d="M5 11.5V13M8 11.5V13M11 11.5V13M5.2 7h1.6M9.2 7h1.6"/></symbol>
+  <symbol id="i-list" viewBox="0 0 16 16"><path d="M3 4.5h10M3 8h10M3 11.5h6.5"/></symbol>
+  <symbol id="i-disk" viewBox="0 0 16 16"><rect x="2" y="3.5" width="12" height="9" rx="1.2"/><circle cx="8" cy="8" r="2.2"/></symbol>
+  <symbol id="i-net" viewBox="0 0 16 16"><path d="M2.2 6.4a8.2 8.2 0 0 1 11.6 0M4.4 8.8a5.2 5.2 0 0 1 7.2 0M6.6 11.2a2.2 2.2 0 0 1 2.8 0"/><circle cx="8" cy="13" r=".7" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-health" viewBox="0 0 16 16"><path d="M8 13.2S2.6 10 2.6 6.4a2.9 2.9 0 0 1 5.4-1.5 2.9 2.9 0 0 1 5.4 1.5c0 3.6-5.4 6.8-5.4 6.8Z"/></symbol>
+  <symbol id="i-clean" viewBox="0 0 16 16"><path d="M3.4 5.4h9.2M5.6 5.4V3.6h4.8v1.8M4.6 5.4l.7 7.2a1 1 0 0 0 1 .8h3.4a1 1 0 0 0 1-.8l.7-7.2"/></symbol>
+  <symbol id="i-dup" viewBox="0 0 16 16"><rect x="2.4" y="2.4" width="7.2" height="7.2" rx="1.2"/><rect x="6.4" y="6.4" width="7.2" height="7.2" rx="1.2"/></symbol>
+  <symbol id="i-file" viewBox="0 0 16 16"><path d="M4 2.4h5l3 3v8.2H4Z"/><path d="M9 2.4v3h3"/></symbol>
+  <symbol id="i-power" viewBox="0 0 16 16"><path d="M8 2.6v5"/><path d="M5 4.4a4.6 4.6 0 1 0 6 0"/></symbol>
+  <symbol id="i-app" viewBox="0 0 16 16"><path d="M8 2.2 13.4 5v6L8 13.8 2.6 11V5Z"/><path d="M2.6 5 8 7.8 13.4 5M8 7.8v6"/></symbol>
+  <symbol id="i-set" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.1"/><path d="M8 2v1.6M8 12.4V14M2 8h1.6M12.4 8H14M3.8 3.8l1.1 1.1M11.1 11.1l1.1 1.1M12.2 3.8l-1.1 1.1M4.9 11.1l-1.1 1.1"/></symbol>
+  <symbol id="i-bolt" viewBox="0 0 16 16"><path d="M8.8 2 4.6 8.8h3L7 14l4.4-7h-3.1Z"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 16 16"><path d="M13 8a5 5 0 1 1-1.6-3.7"/><path d="M13.2 2.6v3h-3"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 16 16"><path d="M2 4.6h4.2l1.2 1.6h6.6v7H2Z"/></symbol>
+</svg>
+
+<div class="top">
+  <div>
+    <h1>Windows系统管家 · UI 设计稿</h1>
+    <div class="meta">Windows 11 Fluent Design · 13 个板块 · 明暗双主题</div>
+  </div>
+  <button class="themebtn" onclick="
+    var r=document.documentElement;
+    r.dataset.theme = r.dataset.theme==='dark' ? 'light' : 'dark';
+    this.textContent = r.dataset.theme==='dark' ? '切换到浅色' : '切换到深色';
+  ">切换到浅色</button>
+</div>
+
+<p class="lead">按 Windows 11 原生规范重做：Mica 底、8px 圆角卡片、NavigationView 导航、系统强调色、Segoe UI Variable。丢掉之前那套「窄侧栏 + 小字号」的 Mac 风格。</p>
+
+<div class="toc">
+  <a href="#tokens">设计令牌</a>
+  <a href="#shell">外壳与导航</a>
+  <a href="#comp">基础控件</a>
+  <a href="#p1">概览</a><a href="#p2">CPU</a><a href="#p3">内存</a><a href="#p4">进程</a>
+  <a href="#p5">磁盘</a><a href="#p6">网络</a><a href="#p7">体检</a><a href="#p8">垃圾清理</a>
+  <a href="#p9">重复文件</a><a href="#p10">大文件</a><a href="#p11">启动项</a>
+  <a href="#p12">软件</a><a href="#p13">设置</a>
+</div>
+
+<!-- ============ 令牌 ============ -->
+<h2 id="tokens"><span class="num">01</span>设计令牌</h2>
+<p class="note">颜色全部取自 Windows 11 系统语义色，不自定义品牌色。强调色跟随系统（用户可在 Windows 设置里改，应用自动同步）。</p>
+
+<div class="tokens">
+  <div class="swatch"><div class="chip" style="background:var(--mica)"></div><div class="info"><div class="name">Mica 底</div><div class="val">--mica</div></div></div>
+  <div class="swatch"><div class="chip" style="background:var(--layer)"></div><div class="info"><div class="name">层 / 侧栏</div><div class="val">--layer</div></div></div>
+  <div class="swatch"><div class="chip" style="background:var(--card)"></div><div class="info"><div class="name">卡片</div><div class="val">--card</div></div></div>
+  <div class="swatch"><div class="chip" style="background:var(--stroke)"></div><div class="info"><div class="name">描边</div><div class="val">--stroke</div></div></div>
+  <div class="swatch"><div class="chip" style="background:var(--accent)"></div><div class="info"><div class="name">强调色</div><div class="val">--accent</div></div></div>
+  <div class="swatch"><div class="chip" style="background:var(--ok)"></div><div class="info"><div class="name">正常</div><div class="val">--ok</div></div></div>
+  <div class="swatch"><div class="chip" style="background:var(--warn)"></div><div class="info"><div class="name">警告</div><div class="val">--warn</div></div></div>
+  <div class="swatch"><div class="chip" style="background:var(--err)"></div><div class="info"><div class="name">危险</div><div class="val">--err</div></div></div>
+</div>
+
+<div class="spec">
+  <div><b>字体</b><span>Segoe UI Variable Text / 微软雅黑 UI</span></div>
+  <div><b>字号阶梯</b><span>页面标题 26 · 区块标题 14 · 正文 13 · 辅助 11.5</span></div>
+  <div><b>圆角</b><span>卡片 8 · 控件 4 · 开关 10（全圆）</span></div>
+  <div><b>间距</b><span>卡片内 14 · 卡片间 12 · 内容边距 24</span></div>
+  <div><b>导航</b><span>宽 228 · 项高 38 · 选中条 3×16</span></div>
+  <div><b>KPI 数字</b><span>26px / 600 / 字距 -0.5</span></div>
+</div>
+
+<!-- ============ 外壳 ============ -->
+<h2 id="shell"><span class="num">02</span>外壳与导航</h2>
+<p class="note">左侧 NavigationView 分三组：监控 / 优化 / 其他。选中项左侧一条 3px 强调色竖条 + 卡片底色，和 Win11 设置、资源管理器一致。</p>
+
+<div class="win small">
+  <div class="titlebar">
+    <div class="l"><span class="appicon"></span>Windows系统管家</div>
+    <div class="wctl"><span>—</span><span>▢</span><span>✕</span></div>
+  </div>
+  <div class="wbody" style="height:662px">
+    <aside class="nav">
+      <div class="nav-group">监控</div>
+      <div class="nav-item active"><svg class="ico"><use href="#i-home"/></svg>概览</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-cpu"/></svg>CPU</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-mem"/></svg>内存</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-list"/></svg>进程</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-disk"/></svg>磁盘</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-net"/></svg>网络</div>
+      <div class="nav-group">优化</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-health"/></svg>体检</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-clean"/></svg>垃圾清理</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-dup"/></svg>重复文件</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-file"/></svg>大文件</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-power"/></svg>启动项</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-app"/></svg>软件</div>
+      <div class="nav-foot">
+        <div class="nav-item"><svg class="ico"><use href="#i-set"/></svg>设置</div>
+      </div>
+    </aside>
+    <main class="content" style="justify-content:center;align-items:center;color:var(--text-3)">
+      <div style="text-align:center">
+        <div style="font-size:20px;color:var(--text-2);margin-bottom:6px">内容区</div>
+        <div style="font-size:12.5px">边距 24px，卡片间距 12px</div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<div class="anno">
+  <div><b>图标</b>16px 线性图标，1.4 描边，选中时变强调色</div>
+  <div><b>标题栏</b>保留系统标题栏，Mica 延伸到客户区；不做自绘窗口按钮</div>
+  <div><b>分组</b>组标题 11px 灰色，与导航项间距 10px</div>
+</div>
+
+<!-- ============ 控件 ============ -->
+<h2 id="comp"><span class="num">03</span>基础控件</h2>
+<div class="grid g2" style="margin-top:14px">
+  <div class="card">
+    <div class="chead"><span class="ct">按钮</span></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <button class="btn primary"><svg class="ico"><use href="#i-bolt"/></svg>一键优化</button>
+      <button class="btn"><svg class="ico"><use href="#i-refresh"/></svg>重新扫描</button>
+      <button class="btn subtle">取消</button>
+    </div>
+    <p class="note" style="margin-top:12px">主按钮填强调色；次按钮描边 + 底部加深 1px（Win11 的 control stroke）；文字按钮无边框。</p>
+  </div>
+  <div class="card">
+    <div class="chead"><span class="ct">开关 / 复选 / 输入</span></div>
+    <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+      <span class="toggle on"><i></i></span>
+      <span class="toggle"><i></i></span>
+      <span class="check on"></span>
+      <span class="check"></span>
+      <div class="search"><svg class="ico" style="width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.5"><use href="#i-list"/></svg>搜索…</div>
+      <div class="combo">按体积排序<svg class="chev" viewBox="0 0 16 16"><path d="M4 6.5 8 10.5l4-4"/></svg></div>
+    </div>
+    <p class="note" style="margin-top:12px">开关 40×20，滑块 14；复选框 16px、选中填强调色带白勾。</p>
+  </div>
+</div>
+
+<!-- ============ 概览 ============ -->
+<h2 id="p1"><span class="num">04</span>概览</h2>
+<p class="note">四个 KPI 卡横向铺满 → CPU 趋势（2/3）+ 每核（1/3）→ 内存 Top + 磁盘分区。标题区右侧放全局操作。</p>
+
+<div class="win">
+  <div class="titlebar"><div class="l"><span class="appicon"></span>Windows系统管家</div>
+    <div class="wctl"><span>—</span><span>▢</span><span>✕</span></div></div>
+  <div class="wbody">
+    <aside class="nav">
+      <div class="nav-group">监控</div>
+      <div class="nav-item active"><svg class="ico"><use href="#i-home"/></svg>概览</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-cpu"/></svg>CPU</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-mem"/></svg>内存</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-list"/></svg>进程</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-disk"/></svg>磁盘</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-net"/></svg>网络</div>
+      <div class="nav-group">优化</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-health"/></svg>体检</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-clean"/></svg>垃圾清理</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-dup"/></svg>重复文件</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-file"/></svg>大文件</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-power"/></svg>启动项</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-app"/></svg>软件</div>
+      <div class="nav-foot"><div class="nav-item"><svg class="ico"><use href="#i-set"/></svg>设置</div></div>
+    </aside>
+    <main class="content">
+      <div class="phead">
+        <div><div class="t">概览</div><div class="s">实时监控 CPU、内存、磁盘与网络</div></div>
+        <div class="actions">
+          <button class="btn"><svg class="ico"><use href="#i-bolt"/></svg>强力模式</button>
+          <button class="btn primary"><svg class="ico"><use href="#i-clean"/></svg>一键优化</button>
+        </div>
+      </div>
+
+      <div class="grid g4" style="margin-bottom:12px">
+        <div class="kpi"><div class="kl"><svg class="ico"><use href="#i-cpu"/></svg>CPU</div>
+          <div class="kv">17<small>%</small></div><div class="ks">4 线程 · 3096 MHz</div></div>
+        <div class="kpi"><div class="kl"><svg class="ico"><use href="#i-mem"/></svg>内存</div>
+          <div class="kv">59<small>%</small></div><div class="ks">可用 6.4 GB</div></div>
+        <div class="kpi"><div class="kl"><svg class="ico"><use href="#i-disk"/></svg>磁盘</div>
+          <div class="kv">38<small>%</small></div><div class="ks">剩余 71.8 GB</div></div>
+        <div class="kpi"><div class="kl"><svg class="ico"><use href="#i-net"/></svg>网络</div>
+          <div class="kv" style="font-size:21px">↓1.2<small>MB/s</small></div><div class="ks">↑ 184 KB/s</div></div>
+      </div>
+
+      <div class="grid g21" style="flex:1;min-height:0;margin-bottom:12px">
+        <div class="card">
+          <div class="chead"><span class="ct">CPU 趋势</span><span class="cs">最近 3 分钟</span></div>
+          <div class="chart">
+            <svg viewBox="0 0 560 150" preserveAspectRatio="none">
+              <line x1="34" y1="20" x2="552" y2="20" stroke="var(--stroke-soft)"/>
+              <line x1="34" y1="70" x2="552" y2="70" stroke="var(--stroke-soft)"/>
+              <line x1="34" y1="120" x2="552" y2="120" stroke="var(--stroke-soft)"/>
+              <text class="axis" x="28" y="24" text-anchor="end">100%</text>
+              <text class="axis" x="28" y="74" text-anchor="end">50%</text>
+              <text class="axis" x="28" y="124" text-anchor="end">0%</text>
+              <path d="M34 96 L70 88 L106 100 L142 74 L178 82 L214 60 L250 92 L286 70 L322 78 L358 56 L394 88 L430 66 L466 74 L502 58 L552 70 L552 120 L34 120 Z" fill="var(--chart-fill)"/>
+              <path d="M34 96 L70 88 L106 100 L142 74 L178 82 L214 60 L250 92 L286 70 L322 78 L358 56 L394 88 L430 66 L466 74 L502 58 L552 70" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linejoin="round"/>
+            </svg>
+          </div>
+        </div>
+        <div class="card">
+          <div class="chead"><span class="ct">每核占用</span><span class="cs">4 物理 / 4 逻辑</span></div>
+          <div style="flex:1;display:flex;align-items:flex-end;gap:10px;padding:6px 4px 2px">
+            <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%;gap:4px"><div style="height:78%;background:var(--accent);border-radius:3px"></div><div style="font-size:10px;color:var(--text-4);text-align:center">0</div></div>
+            <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%;gap:4px"><div style="height:14%;background:var(--accent);border-radius:3px"></div><div style="font-size:10px;color:var(--text-4);text-align:center">1</div></div>
+            <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%;gap:4px"><div style="height:9%;background:var(--accent);border-radius:3px"></div><div style="font-size:10px;color:var(--text-4);text-align:center">2</div></div>
+            <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%;gap:4px"><div style="height:11%;background:var(--accent);border-radius:3px"></div><div style="font-size:10px;color:var(--text-4);text-align:center">3</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid g2" style="flex:0 0 186px">
+        <div class="card">
+          <div class="chead"><span class="ct">内存占用 Top</span></div>
+          <div class="rows">
+            <div class="row"><span class="n">WorkBuddyAI.exe</span><span class="b">×8</span><span class="v">1.1 GB</span></div>
+            <div class="row"><span class="n">svchost.exe</span><span class="b">×49</span><span class="v">393 MB</span></div>
+            <div class="row"><span class="n">explorer.exe</span><span class="v">188 MB</span></div>
+            <div class="row"><span class="n">chrome.exe</span><span class="b">×12</span><span class="v">176 MB</span></div>
+            <div class="row"><span class="n">Windows系统管家.exe</span><span class="v">86 MB</span></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="chead"><span class="ct">磁盘分区</span><span class="cs">4 个分区</span></div>
+          <div class="rows">
+            <div class="row"><span class="n">C:</span><span class="b">NTFS</span><span class="v">38% · 余 71.8 GB</span></div>
+            <div class="row"><span class="n">D:</span><span class="b">NTFS</span><span class="v">4% · 余 112 GB</span></div>
+            <div class="row"><span class="n">E:</span><span class="b">NTFS</span><span class="v">6% · 余 111 GB</span></div>
+            <div class="row"><span class="n">F:</span><span class="b">NTFS</span><span class="v">0% · 余 465 GB</span></div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- ============ CPU ============ -->
+<h2 id="p2"><span class="num">05</span>CPU</h2>
+<div class="win">
+  <div class="titlebar"><div class="l"><span class="appicon"></span>Windows系统管家</div>
+    <div class="wctl"><span>—</span><span>▢</span><span>✕</span></div></div>
+  <div class="wbody">
+    <aside class="nav">
+      <div class="nav-group">监控</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-home"/></svg>概览</div>
+      <div class="nav-item active"><svg class="ico"><use href="#i-cpu"/></svg>CPU</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-mem"/></svg>内存</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-list"/></svg>进程</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-disk"/></svg>磁盘</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-net"/></svg>网络</div>
+      <div class="nav-group">优化</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-health"/></svg>体检</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-clean"/></svg>垃圾清理</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-dup"/></svg>重复文件</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-file"/></svg>大文件</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-power"/></svg>启动项</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-app"/></svg>软件</div>
+      <div class="nav-foot"><div class="nav-item"><svg class="ico"><use href="#i-set"/></svg>设置</div></div>
+    </aside>
+    <main class="content">
+      <div class="phead"><div><div class="t">CPU</div><div class="s">Intel Core i7-1280P · 14 核 20 线程</div></div></div>
+      <div class="grid g4" style="margin-bottom:12px">
+        <div class="kpi"><div class="kl">总占用</div><div class="kv">17<small>%</small></div><div class="ks">实时</div></div>
+        <div class="kpi"><div class="kl">当前频率</div><div class="kv">3096<small>MHz</small></div><div class="ks">基准 2.0 GHz</div></div>
+        <div class="kpi"><div class="kl">核心</div><div class="kv">20</div><div class="ks">14 物理核</div></div>
+        <div class="kpi"><div class="kl">负载均值</div><div class="kv">1.42</div><div class="ks">5 分钟 1.28</div></div>
+      </div>
+      <div class="grid g21" style="flex:1;min-height:0;margin-bottom:12px">
+        <div class="card"><div class="chead"><span class="ct">CPU 使用率</span><span class="cs">最近 3 分钟</span></div>
+          <div class="chart"><svg viewBox="0 0 560 130" preserveAspectRatio="none">
+            <line x1="34" y1="20" x2="552" y2="20" stroke="var(--stroke-soft)"/>
+            <line x1="34" y1="70" x2="552" y2="70" stroke="var(--stroke-soft)"/>
+            <line x1="34" y1="120" x2="552" y2="120" stroke="var(--stroke-soft)"/>
+            <text class="axis" x="28" y="24" text-anchor="end">100%</text><text class="axis" x="28" y="74" text-anchor="end">50%</text><text class="axis" x="28" y="124" text-anchor="end">0%</text>
+            <path d="M34 96 L70 88 L106 100 L142 74 L178 82 L214 60 L250 92 L286 70 L322 78 L358 56 L394 88 L430 66 L466 74 L502 58 L552 70 L552 120 L34 120 Z" fill="var(--chart-fill)"/>
+            <path d="M34 96 L70 88 L106 100 L142 74 L178 82 L214 60 L250 92 L286 70 L322 78 L358 56 L394 88 L430 66 L466 74 L502 58 L552 70" fill="none" stroke="var(--accent)" stroke-width="1.8"/>
+          </svg></div>
+        </div>
+        <div class="card"><div class="chead"><span class="ct">每核占用</span><span class="cs">14 物理 / 20 逻辑</span></div>
+          <div style="flex:1;display:flex;align-items:flex-end;gap:5px;padding:6px 2px 2px">
+            <div style="flex:1;height:78%;background:var(--accent);border-radius:2px"></div>
+            <div style="flex:1;height:14%;background:var(--accent);border-radius:2px"></div>
+            <div style="flex:1;height:9%;background:var(--accent);border-radius:2px"></div>
+            <div style="flex:1;height:22%;background:var(--accent);border-radius:2px"></div>
+            <div style="flex:1;height:11%;background:var(--accent);border-radius:2px"></div>
+            <div style="flex:1;height:36%;background:var(--accent);border-radius:2px"></div>
+            <div style="flex:1;height:8%;background:var(--accent);border-radius:2px"></div>
+            <div style="flex:1;height:18%;background:var(--accent);border-radius:2px"></div>
+            <div style="flex:1;height:12%;background:var(--accent);border-radius:2px"></div>
+            <div style="flex:1;height:30%;background:var(--accent);border-radius:2px"></div>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="flex:0 0 156px">
+        <div class="chead"><span class="ct">CPU 占用 Top</span><span class="cs">2 个进程高于 25%</span></div>
+        <table class="tbl"><thead><tr><th style="width:38%">进程</th><th>PID</th><th>CPU</th><th>内存</th><th style="width:90px">占比</th></tr></thead>
+        <tbody>
+          <tr><td class="strong">WorkBuddyAI.exe</td><td>12044</td><td style="color:var(--warn)">34.2%</td><td>412 MB</td><td><span class="mini"><i style="width:82%"></i></span></td></tr>
+          <tr><td class="strong">Windows系统管家.exe</td><td>9068</td><td>6.1%</td><td>86 MB</td><td><span class="mini"><i style="width:24%"></i></span></td></tr>
+          <tr><td class="strong">explorer.exe</td><td>4412</td><td>2.8%</td><td>188 MB</td><td><span class="mini"><i style="width:14%"></i></span></td></tr>
+        </tbody></table>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- ============ 内存 ============ -->
+<h2 id="p3"><span class="num">06</span>内存</h2>
+<div class="win">
+  <div class="titlebar"><div class="l"><span class="appicon"></span>Windows系统管家</div>
+    <div class="wctl"><span>—</span><span>▢</span><span>✕</span></div></div>
+  <div class="wbody">
+    <aside class="nav">
+      <div class="nav-group">监控</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-home"/></svg>概览</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-cpu"/></svg>CPU</div>
+      <div class="nav-item active"><svg class="ico"><use href="#i-mem"/></svg>内存</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-list"/></svg>进程</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-disk"/></svg>磁盘</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-net"/></svg>网络</div>
+      <div class="nav-group">优化</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-health"/></svg>体检</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-clean"/></svg>垃圾清理</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-dup"/></svg>重复文件</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-file"/></svg>大文件</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-power"/></svg>启动项</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-app"/></svg>软件</div>
+      <div class="nav-foot"><div class="nav-item"><svg class="ico"><use href="#i-set"/></svg>设置</div></div>
+    </aside>
+    <main class="content">
+      <div class="phead"><div><div class="t">内存</div><div class="s">共 15.7 GB · 可用 6.4 GB</div></div>
+        <div class="actions"><button class="btn primary"><svg class="ico"><use href="#i-clean"/></svg>一键优化内存</button></div></div>
+      <div class="grid g4" style="margin-bottom:12px">
+        <div class="kpi"><div class="kl">使用中</div><div class="kv" style="font-size:22px">9.6<small>GB</small></div><div class="ks">59%</div></div>
+        <div class="kpi"><div class="kl">可回收缓存</div><div class="kv" style="font-size:22px">3.1<small>GB</small></div><div class="ks">可随时回收</div></div>
+        <div class="kpi"><div class="kl">可用内存</div><div class="kv" style="font-size:22px">6.4<small>GB</small></div><div class="ks">其中空闲 6 MB</div></div>
+        <div class="kpi"><div class="kl">提交内存</div><div class="kv" style="font-size:22px">11.2<small>GB</small></div><div class="ks">上限 18.0 GB</div></div>
+      </div>
+      <div class="grid g21" style="flex:1;min-height:0;margin-bottom:12px">
+        <div class="card"><div class="chead"><span class="ct">内存使用率</span><span class="cs">最近 3 分钟</span></div>
+          <div class="chart"><svg viewBox="0 0 560 130" preserveAspectRatio="none">
+            <line x1="34" y1="20" x2="552" y2="20" stroke="var(--stroke-soft)"/>
+            <line x1="34" y1="70" x2="552" y2="70" stroke="var(--stroke-soft)"/>
+            <line x1="34" y1="120" x2="552" y2="120" stroke="var(--stroke-soft)"/>
+            <text class="axis" x="28" y="24" text-anchor="end">100%</text><text class="axis" x="28" y="74" text-anchor="end">50%</text><text class="axis" x="28" y="124" text-anchor="end">0%</text>
+            <path d="M34 52 L110 50 L186 54 L262 49 L338 52 L414 50 L490 53 L552 51 L552 120 L34 120 Z" fill="var(--chart-fill)"/>
+            <path d="M34 52 L110 50 L186 54 L262 49 L338 52 L414 50 L490 53 L552 51" fill="none" stroke="var(--accent)" stroke-width="1.8"/>
+          </svg></div>
+        </div>
+        <div class="card"><div class="chead"><span class="ct">内存构成</span><span class="cs">共 15.7 GB</span></div>
+          <div style="display:flex;height:10px;border-radius:5px;overflow:hidden;margin:2px 0 12px">
+            <div style="width:61%;background:var(--err)"></div>
+            <div style="width:20%;background:var(--warn)"></div>
+            <div style="flex:1;background:var(--ok)"></div>
+          </div>
+          <div class="rows">
+            <div class="row"><span class="dot err"></span><span class="n">使用中</span><span class="v">9.6 GB</span></div>
+            <div class="row"><span class="dot warn"></span><span class="n">待命</span><span class="v">3.1 GB</span></div>
+            <div class="row"><span class="dot ok"></span><span class="n">空闲</span><span class="v">6 MB</span></div>
+          </div>
+          <p style="font-size:11.5px;color:var(--text-3);margin-top:10px;line-height:1.45">有 3.1 GB 待命缓存可回收，清理后立刻转为可用内存。</p>
+          <div style="margin-top:auto"><button class="btn primary" style="width:100%;justify-content:center">一键优化内存</button></div>
+        </div>
+      </div>
+      <div class="grid g2" style="flex:0 0 158px">
+        <div class="card"><div class="chead"><span class="ct">内存占用 Top</span></div>
+          <div class="rows">
+            <div class="row"><span class="n">WorkBuddyAI.exe</span><span class="b">×8</span><span class="v">1.1 GB</span></div>
+            <div class="row"><span class="n">svchost.exe</span><span class="b">×49</span><span class="v">393 MB</span></div>
+            <div class="row"><span class="n">explorer.exe</span><span class="v">188 MB</span></div>
+            <div class="row"><span class="n">chrome.exe</span><span class="b">×12</span><span class="v">176 MB</span></div>
+          </div>
+        </div>
+        <div class="card"><div class="chead"><span class="ct">疑似泄漏</span><span class="cs">未发现异常增长</span></div>
+          <div style="flex:1;display:grid;place-items:center;color:var(--text-4);font-size:12px">内存持续增长的进程会出现在这里</div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- ============ 进程 ============ -->
+<h2 id="p4"><span class="num">07</span>进程</h2>
+<div class="win">
+  <div class="titlebar"><div class="l"><span class="appicon"></span>Windows系统管家</div>
+    <div class="wctl"><span>—</span><span>▢</span><span>✕</span></div></div>
+  <div class="wbody">
+    <aside class="nav">
+      <div class="nav-group">监控</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-home"/></svg>概览</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-cpu"/></svg>CPU</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-mem"/></svg>内存</div>
+      <div class="nav-item active"><svg class="ico"><use href="#i-list"/></svg>进程</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-disk"/></svg>磁盘</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-net"/></svg>网络</div>
+      <div class="nav-group">优化</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-health"/></svg>体检</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-clean"/></svg>垃圾清理</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-dup"/></svg>重复文件</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-file"/></svg>大文件</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-power"/></svg>启动项</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-app"/></svg>软件</div>
+      <div class="nav-foot"><div class="nav-item"><svg class="ico"><use href="#i-set"/></svg>设置</div></div>
+    </aside>
+    <main class="content">
+      <div class="phead"><div><div class="t">进程</div><div class="s">共 218 个进程，按内存排序</div></div></div>
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <div class="search"><svg style="width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.5"><use href="#i-list"/></svg>搜索进程名或 PID…</div>
+        <div class="combo">按内存排序<svg class="chev" viewBox="0 0 16 16"><path d="M4 6.5 8 10.5l4-4"/></svg></div>
+        <div style="flex:1"></div>
+        <button class="btn"><svg class="ico"><use href="#i-refresh"/></svg>刷新</button>
+      </div>
+      <div class="card" style="flex:1;padding:14px 14px 6px">
+        <table class="tbl"><thead><tr>
+          <th style="width:34%">进程</th><th style="width:74px">PID</th><th style="width:70px">CPU</th>
+          <th style="width:88px">内存</th><th>占比</th></tr></thead>
+        <tbody>
+          <tr><td class="strong">WorkBuddyAI.exe</td><td>12044</td><td style="color:var(--warn)">34.2%</td><td>412 MB</td><td><span class="mini"><i style="width:64%"></i></span></td></tr>
+          <tr><td class="strong">svchost.exe</td><td>1884</td><td>0.4%</td><td>128 MB</td><td><span class="mini"><i style="width:20%"></i></span></td></tr>
+          <tr><td class="strong">explorer.exe</td><td>4412</td><td>2.8%</td><td>188 MB</td><td><span class="mini"><i style="width:29%"></i></span></td></tr>
+          <tr><td class="strong">chrome.exe</td><td>9020</td><td>1.1%</td><td>176 MB</td><td><span class="mini"><i style="width:27%"></i></span></td></tr>
+          <tr><td class="strong">Windows系统管家.exe</td><td>9068</td><td>6.1%</td><td>86 MB</td><td><span class="mini"><i style="width:13%"></i></span></td></tr>
+          <tr><td class="strong">dwm.exe</td><td>1212</td><td>1.6%</td><td>74 MB</td><td><span class="mini"><i style="width:11%"></i></span></td></tr>
+          <tr><td class="strong">v2rayN.exe</td><td>7731</td><td>0.2%</td><td>52 MB</td><td><span class="mini"><i style="width:8%"></i></span></td></tr>
+          <tr><td class="strong">SearchHost.exe</td><td>6120</td><td>0.0%</td><td>41 MB</td><td><span class="mini"><i style="width:6%"></i></span></td></tr>
+          <tr><td class="strong">ctfmon.exe</td><td>3388</td><td>0.0%</td><td>28 MB</td><td><span class="mini"><i style="width:4%"></i></span></td></tr>
+          <tr><td class="strong">RuntimeBroker.exe</td><td>5540</td><td>0.0%</td><td>22 MB</td><td><span class="mini"><i style="width:3%"></i></span></td></tr>
+        </tbody></table>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- ============ 磁盘 ============ -->
+<h2 id="p5"><span class="num">08</span>磁盘</h2>
+<div class="win">
+  <div class="titlebar"><div class="l"><span class="appicon"></span>Windows系统管家</div>
+    <div class="wctl"><span>—</span><span>▢</span><span>✕</span></div></div>
+  <div class="wbody">
+    <aside class="nav">
+      <div class="nav-group">监控</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-home"/></svg>概览</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-cpu"/></svg>CPU</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-mem"/></svg>内存</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-list"/></svg>进程</div>
+      <div class="nav-item active"><svg class="ico"><use href="#i-disk"/></svg>磁盘</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-net"/></svg>网络</div>
+      <div class="nav-group">优化</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-health"/></svg>体检</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-clean"/></svg>垃圾清理</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-dup"/></svg>重复文件</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-file"/></svg>大文件</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-power"/></svg>启动项</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-app"/></svg>软件</div>
+      <div class="nav-foot"><div class="nav-item"><svg class="ico"><use href="#i-set"/></svg>设置</div></div>
+    </aside>
+    <main class="content">
+      <div class="phead"><div><div class="t">磁盘</div><div class="s">系统盘 C: · NTFS · 已 4K 对齐</div></div></div>
+      <div class="grid g4" style="margin-bottom:12px">
+        <div class="kpi"><div class="kl">总容量</div><div class="kv" style="font-size:22px">115<small>GB</small></div><div class="ks">NTFS</div></div>
+        <div class="kpi"><div class="kl">已使用</div><div class="kv" style="font-size:22px">43.2<small>GB</small></div><div class="ks">38%</div></div>
+        <div class="kpi"><div class="kl">读取</div><div class="kv" style="font-size:22px">1.2<small>MB/s</small></div><div class="ks">实时</div></div>
+        <div class="kpi"><div class="kl">写入</div><div class="kv" style="font-size:22px">684<small>KB/s</small></div><div class="ks">实时</div></div>
+      </div>
+      <div class="card" style="flex:1;min-height:0;margin-bottom:12px">
+        <div class="chead"><span class="ct">读写速率</span><span class="cs">KB/s · 最近 3 分钟</span></div>
+        <div class="chart"><svg viewBox="0 0 860 180" preserveAspectRatio="none">
+          <line x1="40" y1="24" x2="850" y2="24" stroke="var(--stroke-soft)"/>
+          <line x1="40" y1="96" x2="850" y2="96" stroke="var(--stroke-soft)"/>
+          <line x1="40" y1="168" x2="850" y2="168" stroke="var(--stroke-soft)"/>
+          <text class="axis" x="34" y="28" text-anchor="end">1600</text><text class="axis" x="34" y="100" text-anchor="end">800</text><text class="axis" x="34" y="172" text-anchor="end">0</text>
+          <path d="M40 140 L120 132 L200 146 L280 108 L360 120 L440 88 L520 128 L600 100 L680 112 L760 84 L850 98" fill="none" stroke="var(--accent)" stroke-width="1.8"/>
+          <path d="M40 158 L120 154 L200 160 L280 148 L360 152 L440 140 L520 156 L600 146 L680 150 L760 138 L850 144" fill="none" stroke="var(--warn)" stroke-width="1.8"/>
+        </svg></div>
+      </div>
+      <div class="card" style="flex:0 0 162px">
+        <div class="chead"><span class="ct">全部分区</span><span class="cs">4 个分区 · 共 817 GB</span></div>
+        <div class="rows">
+          <div class="row"><span class="n" style="width:26px">C:</span><span class="b">NTFS</span><span class="bar" style="max-width:280px"><i class="warn" style="width:38%"></i></span><span class="v">38% · 余 71.8 GB</span></div>
+          <div class="row"><span class="n" style="width:26px">D:</span><span class="b">NTFS</span><span class="bar" style="max-width:280px"><i class="ok" style="width:4%"></i></span><span class="v">4% · 余 112 GB</span></div>
+          <div class="row"><span class="n" style="width:26px">E:</span><span class="b">NTFS</span><span class="bar" style="max-width:280px"><i class="ok" style="width:6%"></i></span><span class="v">6% · 余 111 GB</span></div>
+          <div class="row"><span class="n" style="width:26px">F:</span><span class="b">NTFS</span><span class="bar" style="max-width:280px"><i class="ok" style="width:1%"></i></span><span class="v">0% · 余 465 GB</span></div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- ============ 网络 ============ -->
+<h2 id="p6"><span class="num">09</span>网络</h2>
+<div class="win">
+  <div class="titlebar"><div class="l"><span class="appicon"></span>Windows系统管家</div>
+    <div class="wctl"><span>—</span><span>▢</span><span>✕</span></div></div>
+  <div class="wbody">
+    <aside class="nav">
+      <div class="nav-group">监控</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-home"/></svg>概览</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-cpu"/></svg>CPU</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-mem"/></svg>内存</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-list"/></svg>进程</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-disk"/></svg>磁盘</div>
+      <div class="nav-item active"><svg class="ico"><use href="#i-net"/></svg>网络</div>
+      <div class="nav-group">优化</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-health"/></svg>体检</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-clean"/></svg>垃圾清理</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-dup"/></svg>重复文件</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-file"/></svg>大文件</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-power"/></svg>启动项</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-app"/></svg>软件</div>
+      <div class="nav-foot"><div class="nav-item"><svg class="ico"><use href="#i-set"/></svg>设置</div></div>
+    </aside>
+    <main class="content">
+      <div class="phead"><div><div class="t">网络</div><div class="s">2 个已连接 · 最高 4294 Mbps</div></div></div>
+      <div class="grid g4" style="margin-bottom:12px">
+        <div class="kpi"><div class="kl">下行</div><div class="kv" style="font-size:22px">1.2<small>MB/s</small></div><div class="ks">实时</div></div>
+        <div class="kpi"><div class="kl">上行</div><div class="kv" style="font-size:22px">184<small>KB/s</small></div><div class="ks">实时</div></div>
+        <div class="kpi"><div class="kl">累计接收</div><div class="kv" style="font-size:22px">48.2<small>GB</small></div><div class="ks">自开机</div></div>
+        <div class="kpi"><div class="kl">累计发送</div><div class="kv" style="font-size:22px">6.4<small>GB</small></div><div class="ks">自开机</div></div>
+      </div>
+      <div class="card" style="flex:1;min-height:0;margin-bottom:12px">
+        <div class="chead"><span class="ct">网络吞吐</span><span class="cs">KB/s · 最近 3 分钟</span></div>
+        <div class="chart"><svg viewBox="0 0 860 180" preserveAspectRatio="none">
+          <line x1="40" y1="24" x2="850" y2="24" stroke="var(--stroke-soft)"/>
+          <line x1="40" y1="96" x2="850" y2="96" stroke="var(--stroke-soft)"/>
+          <line x1="40" y1="168" x2="850" y2="168" stroke="var(--stroke-soft)"/>
+          <text class="axis" x="34" y="28" text-anchor="end">2400</text><text class="axis" x="34" y="100" text-anchor="end">1200</text><text class="axis" x="34" y="172" text-anchor="end">0</text>
+          <path d="M40 150 L120 120 L200 138 L280 76 L360 110 L440 60 L520 132 L600 96 L680 118 L760 70 L850 104" fill="none" stroke="var(--accent)" stroke-width="1.8"/>
+          <path d="M40 162 L120 158 L200 160 L280 150 L360 154 L440 146 L520 158 L600 152 L680 156 L760 148 L850 152" fill="none" stroke="var(--info)" stroke-width="1.8"/>
+        </svg></div>
+      </div>
+      <div class="card" style="flex:0 0 130px">
+        <div class="chead"><span class="ct">网络接口</span><span class="cs">2 个已连接</span></div>
+        <div class="rows">
+          <div class="row"><span class="dot ok"></span><span class="n" style="width:130px">以太网</span><span class="b">1000M</span><span class="v" style="margin-left:16px">192.168.110.37</span><span class="v" style="margin-left:28px">↓1.2 MB/s ↑184 KB/s</span></div>
+          <div class="row"><span class="dot ok"></span><span class="n" style="width:130px">NodeBabyLink</span><span class="b">4294M</span><span class="v" style="margin-left:16px">10.222.222.1</span><span class="v" style="margin-left:28px">空闲</span></div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- ============ 体检 ============ -->
+<h2 id="p7"><span class="num">10</span>体检</h2>
+<p class="note">分数环 + 评分因素 + 等级图例三块并排。因素条按权重排，未接入的项用灰色空条，避免误读成满分。</p>
+<div class="win">
+  <div class="titlebar"><div class="l"><span class="appicon"></span>Windows系统管家</div>
+    <div class="wctl"><span>—</span><span>▢</span><span>✕</span></div></div>
+  <div class="wbody">
+    <aside class="nav">
+      <div class="nav-group">监控</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-home"/></svg>概览</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-cpu"/></svg>CPU</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-mem"/></svg>内存</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-list"/></svg>进程</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-disk"/></svg>磁盘</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-net"/></svg>网络</div>
+      <div class="nav-group">优化</div>
+      <div class="nav-item active"><svg class="ico"><use href="#i-health"/></svg>体检</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-clean"/></svg>垃圾清理</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-dup"/></svg>重复文件</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-file"/></svg>大文件</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-power"/></svg>启动项</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-app"/></svg>软件</div>
+      <div class="nav-foot"><div class="nav-item"><svg class="ico"><use href="#i-set"/></svg>设置</div></div>
+    </aside>
+    <main class="content">
+      <div class="phead"><div><div class="t">体检</div><div class="s">上次体检 2026-11-07 22:36</div></div>
+        <div class="actions"><button class="btn primary"><svg class="ico"><use href="#i-refresh"/></svg>重新体检</button></div></div>
+
+      <div class="grid" style="grid-template-columns:230px 1fr 210px;flex:1;min-height:0">
+        <div class="card" style="align-items:center;justify-content:center;gap:14px">
+          <div class="ring">
+            <svg viewBox="0 0 100 100">
+              <circle cx="50" cy="50" r="42" fill="none" stroke="var(--stroke)" stroke-width="7"
+                stroke-dasharray="198 264" stroke-linecap="round"/>
+              <circle cx="50" cy="50" r="42" fill="none" stroke="var(--warn)" stroke-width="7"
+                stroke-dasharray="123 264" stroke-linecap="round"/>
+            </svg>
+            <div class="val"><b>62</b><span>一般</span></div>
+          </div>
+          <div style="text-align:center;font-size:12px;color:var(--text-3);line-height:1.6">
+            系统盘剩余 29.2 GB<br>可清理 15.93 GB
+          </div>
+          <button class="btn primary" style="width:100%;justify-content:center">重新体检</button>
+        </div>
+
+        <div class="card">
+          <div class="chead"><span class="ct">评分因素</span><span class="cs">已测 8 / 11 项 · 覆盖权重 80</span></div>
+          <div style="display:flex;flex-direction:column;gap:7px;font-size:12.5px">
+            <div style="display:flex;align-items:center;gap:10px"><span style="width:132px;color:var(--text-2)">系统盘剩余空间</span><span class="bar"><i class="warn" style="width:62%"></i></span><span style="width:30px;text-align:right;color:var(--text-2)">17</span></div>
+            <div style="display:flex;align-items:center;gap:10px"><span style="width:132px;color:var(--text-2)">系统盘总容量</span><span class="bar"><i class="ok" style="width:92%"></i></span><span style="width:30px;text-align:right;color:var(--text-2)">5</span></div>
+            <div style="display:flex;align-items:center;gap:10px"><span style="width:132px;color:var(--text-2)">垃圾文件体积</span><span class="bar"><i class="ok" style="width:88%"></i></span><span style="width:30px;text-align:right;color:var(--text-2)">11</span></div>
+            <div style="display:flex;align-items:center;gap:10px"><span style="width:132px;color:var(--text-2)">重复文件体积</span><span class="bar"><i class="warn" style="width:48%"></i></span><span style="width:30px;text-align:right;color:var(--text-2)">4</span></div>
+            <div style="display:flex;align-items:center;gap:10px"><span style="width:132px;color:var(--text-4)">社交软件缓存</span><span class="bar"><i style="width:0"></i></span><span style="width:30px;text-align:right;color:var(--text-4)">—</span></div>
+            <div style="display:flex;align-items:center;gap:10px"><span style="width:132px;color:var(--text-4)">注册表冗余项</span><span class="bar"><i style="width:0"></i></span><span style="width:30px;text-align:right;color:var(--text-4)">—</span></div>
+            <div style="display:flex;align-items:center;gap:10px"><span style="width:132px;color:var(--text-2)">启动项数量</span><span class="bar"><i class="ok" style="width:80%"></i></span><span style="width:30px;text-align:right;color:var(--text-2)">6</span></div>
+            <div style="display:flex;align-items:center;gap:10px"><span style="width:132px;color:var(--text-2)">磁盘健康</span><span class="bar"><i class="ok" style="width:100%"></i></span><span style="width:30px;text-align:right;color:var(--text-2)">11</span></div>
+            <div style="display:flex;align-items:center;gap:10px"><span style="width:132px;color:var(--text-2)">文件系统与 4K 对齐</span><span class="bar"><i class="ok" style="width:100%"></i></span><span style="width:30px;text-align:right;color:var(--text-2)">7</span></div>
+            <div style="display:flex;align-items:center;gap:10px"><span style="width:132px;color:var(--text-2)">更新/临时文件积压</span><span class="bar"><i class="ok" style="width:84%"></i></span><span style="width:30px;text-align:right;color:var(--text-2)">4</span></div>
+            <div style="display:flex;align-items:center;gap:10px"><span style="width:132px;color:var(--text-2)">可释放系统文件</span><span class="bar"><i class="warn" style="width:56%"></i></span><span style="width:30px;text-align:right;color:var(--text-2)">3</span></div>
+          </div>
+          <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--stroke-soft);font-size:12px;color:var(--text-3);line-height:1.6">
+            <b style="color:var(--text-2)">优化建议</b><br>
+            · 系统盘只剩 29.2 GB，建议清理大文件或把缓存目录迁到其他盘。<br>
+            · 重复文件占用 6.2 GB，建议清理冗余副本。
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="chead"><span class="ct">等级划分</span></div>
+          <div class="rows" style="gap:8px">
+            <div class="row"><span class="dot ok"></span><span class="n">优秀</span><span class="v">≥ 85</span></div>
+            <div class="row"><span class="dot" style="background:var(--info)"></span><span class="n">良好</span><span class="v">70 – 84</span></div>
+            <div class="row"><span class="dot warn"></span><span class="n">一般</span><span class="v">50 – 69</span></div>
+            <div class="row"><span class="dot" style="background:#e08a2b"></span><span class="n">较差</span><span class="v">30 – 49</span></div>
+            <div class="row"><span class="dot err"></span><span class="n">危险</span><span class="v">&lt; 30</span></div>
+          </div>
+          <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--stroke-soft);font-size:11.5px;color:var(--text-3);line-height:1.6">
+            灰色项需要先执行对应扫描（垃圾清理、重复文件、启动项）才会纳入评分。
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- ============ 垃圾清理 ============ -->
+<h2 id="p8"><span class="num">11</span>垃圾清理</h2>
+<p class="note">左侧清理项（带复选框和单项体积），右侧汇总 + 操作。需要管理员权限的项默认不勾选并标注。</p>
+<div class="win">
+  <div class="titlebar"><div class="l"><span class="appicon"></span>Windows系统管家</div>
+    <div class="wctl"><span>—</span><span>▢</span><span>✕</span></div></div>
+  <div class="wbody">
+    <aside class="nav">
+      <div class="nav-group">监控</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-home"/></svg>概览</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-cpu"/></svg>CPU</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-mem"/></svg>内存</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-list"/></svg>进程</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-disk"/></svg>磁盘</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-net"/></svg>网络</div>
+      <div class="nav-group">优化</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-health"/></svg>体检</div>
+      <div class="nav-item active"><svg class="ico"><use href="#i-clean"/></svg>垃圾清理</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-dup"/></svg>重复文件</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-file"/></svg>大文件</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-power"/></svg>启动项</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-app"/></svg>软件</div>
+      <div class="nav-foot"><div class="nav-item"><svg class="ico"><use href="#i-set"/></svg>设置</div></div>
+    </aside>
+    <main class="content">
+      <div class="phead"><div><div class="t">垃圾清理</div><div class="s">只清理可再生的临时文件与缓存</div></div></div>
+      <div class="grid g21" style="flex:1;min-height:0">
+        <div class="card">
+          <div class="chead"><span class="ct">清理项</span><span class="cs">7 项已选</span></div>
+          <div style="display:flex;flex-direction:column;gap:2px">
+            <div style="display:flex;align-items:center;gap:10px;height:30px;font-size:12.5px"><span class="check on"></span><span style="width:118px">用户临时文件</span><span style="color:var(--text-4);font-size:11.5px">临时文件</span><span class="v" style="margin-left:auto;color:var(--text-2)">51 MB</span></div>
+            <div style="display:flex;align-items:center;gap:10px;height:30px;font-size:12.5px"><span class="check on"></span><span style="width:118px">程序崩溃转储</span><span style="color:var(--text-4);font-size:11.5px">临时文件</span><span class="v" style="margin-left:auto;color:var(--text-2)">无</span></div>
+            <div style="display:flex;align-items:center;gap:10px;height:30px;font-size:12.5px"><span class="check on"></span><span style="width:118px">Edge 缓存</span><span style="color:var(--text-4);font-size:11.5px">浏览器缓存</span><span class="v" style="margin-left:auto;color:var(--text-2)">无</span></div>
+            <div style="display:flex;align-items:center;gap:10px;height:30px;font-size:12.5px"><span class="check on"></span><span style="width:118px">Chrome 缓存</span><span style="color:var(--text-4);font-size:11.5px">浏览器缓存</span><span class="v" style="margin-left:auto;color:var(--text-2)">无</span></div>
+            <div style="display:flex;align-items:center;gap:10px;height:30px;font-size:12.5px"><span class="check on"></span><span style="width:118px">缩略图缓存</span><span style="color:var(--text-4);font-size:11.5px">只清 thumbcache</span><span class="v" style="margin-left:auto;color:var(--text-2)">38 KB</span></div>
+            <div style="display:flex;align-items:center;gap:10px;height:30px;font-size:12.5px"><span class="check"></span><span style="width:118px">系统临时文件</span><span style="color:var(--text-4);font-size:11.5px">需要管理员</span><span class="v" style="margin-left:auto;color:var(--text-4)">—</span></div>
+            <div style="display:flex;align-items:center;gap:10px;height:30px;font-size:12.5px"><span class="check on"></span><span style="width:118px">系统日志</span><span style="color:var(--text-4);font-size:11.5px">系统缓存</span><span class="v" style="margin-left:auto;color:var(--text-2)">无</span></div>
+            <div style="display:flex;align-items:center;gap:10px;height:30px;font-size:12.5px"><span class="check on"></span><span style="width:118px">预读取缓存</span><span style="color:var(--text-4);font-size:11.5px">会自行重建</span><span class="v" style="margin-left:auto;color:var(--text-2)">无</span></div>
+            <div style="display:flex;align-items:center;gap:10px;height:30px;font-size:12.5px"><span class="check"></span><span style="width:118px">系统更新缓存</span><span style="color:var(--text-4);font-size:11.5px">需要管理员</span><span class="v" style="margin-left:auto;color:var(--text-4)">—</span></div>
+            <div style="display:flex;align-items:center;gap:10px;height:30px;font-size:12.5px"><span class="check"></span><span style="width:118px">错误报告存档</span><span style="color:var(--text-4);font-size:11.5px">需要管理员</span><span class="v" style="margin-left:auto;color:var(--text-4)">—</span></div>
+          </div>
+          <p style="margin-top:auto;font-size:11.5px;color:var(--text-3);line-height:1.5">系统目录、程序目录、文档目录默认不碰。删除前会逐项经过路径保护校验。</p>
+        </div>
+
+        <div class="card" style="gap:6px">
+          <div class="chead"><span class="ct">可释放</span></div>
+          <div style="font-size:34px;font-weight:600;letter-spacing:-1px">51 MB</div>
+          <div style="font-size:12px;color:var(--text-3)">23 个文件 · 7 项规则</div>
+          <div style="margin-top:10px;display:flex;flex-direction:column;gap:5px;font-size:12px">
+            <div style="display:flex"><span style="color:var(--text-2)">临时文件</span><span style="margin-left:auto;color:var(--text-3)">23 个 · 51 MB</span></div>
+            <div style="display:flex"><span style="color:var(--text-2)">系统缓存</span><span style="margin-left:auto;color:var(--text-3)">1 个 · 38 KB</span></div>
+          </div>
+          <div style="margin-top:auto;display:flex;flex-direction:column;gap:8px">
+            <button class="btn primary" style="justify-content:center">立即清理</button>
+            <button class="btn" style="justify-content:center">重新扫描</button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- ============ 重复文件 ============ -->
+<h2 id="p9"><span class="num">12</span>重复文件</h2>
+<div class="win">
+  <div class="titlebar"><div class="l"><span class="appicon"></span>Windows系统管家</div>
+    <div class="wctl"><span>—</span><span>▢</span><span>✕</span></div></div>
+  <div class="wbody">
+    <aside class="nav">
+      <div class="nav-group">监控</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-home"/></svg>概览</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-cpu"/></svg>CPU</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-mem"/></svg>内存</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-list"/></svg>进程</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-disk"/></svg>磁盘</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-net"/></svg>网络</div>
+      <div class="nav-group">优化</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-health"/></svg>体检</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-clean"/></svg>垃圾清理</div>
+      <div class="nav-item active"><svg class="ico"><use href="#i-dup"/></svg>重复文件</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-file"/></svg>大文件</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-power"/></svg>启动项</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-app"/></svg>软件</div>
+      <div class="nav-foot"><div class="nav-item"><svg class="ico"><use href="#i-set"/></svg>设置</div></div>
+    </aside>
+    <main class="content">
+      <div class="phead"><div><div class="t">重复文件</div><div class="s">12 组重复 · 共可释放 1.1 GB</div></div>
+        <div class="actions"><button class="btn primary">清理选中（送回收站）</button></div></div>
+      <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">
+        <button class="btn"><svg class="ico"><use href="#i-folder"/></svg>选择目录…</button>
+        <span style="font-size:12px;color:var(--text-3)">~</span>
+        <div class="combo">≥ 10 MB<svg class="chev" viewBox="0 0 16 16"><path d="M4 6.5 8 10.5l4-4"/></svg></div>
+        <div style="flex:1"></div>
+        <button class="btn"><svg class="ico"><use href="#i-refresh"/></svg>开始扫描</button>
+      </div>
+      <div class="card" style="flex:1;padding:14px 14px 6px">
+        <table class="tbl"><thead><tr>
+          <th style="width:34px"></th><th style="width:40%">文件名</th><th style="width:70px">份数</th>
+          <th style="width:100px">单份大小</th><th style="width:100px">可释放</th></tr></thead>
+        <tbody>
+          <tr><td><span class="check on"></span></td><td class="strong">installer.exe</td><td>×2</td><td>484 MB</td><td style="color:var(--warn)">484 MB</td></tr>
+          <tr><td><span class="check on"></span></td><td class="strong">installer.exe</td><td>×2</td><td>280 MB</td><td style="color:var(--warn)">280 MB</td></tr>
+          <tr><td><span class="check on"></span></td><td class="strong">node.exe</td><td>×2</td><td>83 MB</td><td style="color:var(--warn)">83 MB</td></tr>
+          <tr><td><span class="check on"></span></td><td class="strong">Windows系统管家-上一版.exe</td><td>×2</td><td>36 MB</td><td style="color:var(--warn)">36 MB</td></tr>
+          <tr><td><span class="check on"></span></td><td class="strong">内存管家-旧版备份2.exe</td><td>×2</td><td>36 MB</td><td style="color:var(--warn)">36 MB</td></tr>
+          <tr><td><span class="check on"></span></td><td class="strong">node.exe</td><td>×2</td><td>28 MB</td><td style="color:var(--warn)">28 MB</td></tr>
+        </tbody></table>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:10px">
+        <button class="btn subtle">全不选</button>
+        <span style="margin-left:auto;font-size:12px;color:var(--text-3)">已选 12 组 · 可释放 1.1 GB</span>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- ============ 大文件 ============ -->
+<h2 id="p10"><span class="num">13</span>大文件</h2>
+<div class="win">
+  <div class="titlebar"><div class="l"><span class="appicon"></span>Windows系统管家</div>
+    <div class="wctl"><span>—</span><span>▢</span><span>✕</span></div></div>
+  <div class="wbody">
+    <aside class="nav">
+      <div class="nav-group">监控</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-home"/></svg>概览</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-cpu"/></svg>CPU</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-mem"/></svg>内存</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-list"/></svg>进程</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-disk"/></svg>磁盘</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-net"/></svg>网络</div>
+      <div class="nav-group">优化</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-health"/></svg>体检</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-clean"/></svg>垃圾清理</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-dup"/></svg>重复文件</div>
+      <div class="nav-item active"><svg class="ico"><use href="#i-file"/></svg>大文件</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-power"/></svg>启动项</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-app"/></svg>软件</div>
+      <div class="nav-foot"><div class="nav-item"><svg class="ico"><use href="#i-set"/></svg>设置</div></div>
+    </aside>
+    <main class="content">
+      <div class="phead"><div><div class="t">大文件</div><div class="s">6 个文件超过 200 MB · 合计 5.7 GB</div></div></div>
+      <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">
+        <button class="btn"><svg class="ico"><use href="#i-folder"/></svg>选择目录…</button>
+        <span style="font-size:12px;color:var(--text-3)">~</span>
+        <div class="combo">≥ 200 MB<svg class="chev" viewBox="0 0 16 16"><path d="M4 6.5 8 10.5l4-4"/></svg></div>
+        <div style="flex:1"></div>
+        <button class="btn"><svg class="ico"><use href="#i-refresh"/></svg>开始扫描</button>
+      </div>
+      <div class="card" style="flex:1;padding:14px 14px 6px">
+        <table class="tbl"><thead><tr>
+          <th style="width:40%">文件名</th><th style="width:90px">大小</th>
+          <th style="width:120px">修改时间</th><th>所在目录</th></tr></thead>
+        <tbody>
+          <tr><td class="strong">MHXY-JD-3.0.637.exe</td><td style="color:var(--warn)">3.8 GB</td><td>2026-09-14 21:02</td><td>Downloads</td></tr>
+          <tr><td class="strong">installer.exe</td><td style="color:var(--warn)">484 MB</td><td>2026-10-02 11:40</td><td>AppData\Local\Temp</td></tr>
+          <tr><td class="strong">WorkBuddy-win32-x64-user-5.9.4.exe</td><td style="color:var(--warn)">484 MB</td><td>2026-11-06 19:22</td><td>Downloads</td></tr>
+          <tr><td class="strong">WorkBuddy-win32-x64-user-5.9.3.exe</td><td style="color:var(--warn)">429 MB</td><td>2026-11-01 09:15</td><td>Downloads</td></tr>
+          <tr><td class="strong">installer.exe</td><td style="color:var(--warn)">280 MB</td><td>2026-10-02 11:40</td><td>AppData\Local\Temp</td></tr>
+          <tr><td class="strong">node.exe</td><td style="color:var(--warn)">83 MB</td><td>2026-08-20 16:08</td><td>AppData\Roaming\npm</td></tr>
+        </tbody></table>
+      </div>
+      <div style="display:flex;align-items:center;margin-top:10px">
+        <span style="font-size:12px;color:var(--text-3)">右键可定位文件或送进回收站，这一页不会自动删任何东西。</span>
+        <span style="margin-left:auto;font-size:12px;color:var(--text-2)">合计 5.7 GB</span>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- ============ 启动项 ============ -->
+<h2 id="p11"><span class="num">14</span>启动项</h2>
+<div class="win">
+  <div class="titlebar"><div class="l"><span class="appicon"></span>Windows系统管家</div>
+    <div class="wctl"><span>—</span><span>▢</span><span>✕</span></div></div>
+  <div class="wbody">
+    <aside class="nav">
+      <div class="nav-group">监控</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-home"/></svg>概览</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-cpu"/></svg>CPU</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-mem"/></svg>内存</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-list"/></svg>进程</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-disk"/></svg>磁盘</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-net"/></svg>网络</div>
+      <div class="nav-group">优化</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-health"/></svg>体检</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-clean"/></svg>垃圾清理</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-dup"/></svg>重复文件</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-file"/></svg>大文件</div>
+      <div class="nav-item active"><svg class="ico"><use href="#i-power"/></svg>启动项</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-app"/></svg>软件</div>
+      <div class="nav-foot"><div class="nav-item"><svg class="ico"><use href="#i-set"/></svg>设置</div></div>
+    </aside>
+    <main class="content">
+      <div class="phead"><div><div class="t">启动项</div><div class="s">8 项 · 已启用 5</div></div>
+        <div class="actions"><button class="btn"><svg class="ico"><use href="#i-refresh"/></svg>重新扫描</button></div></div>
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <div class="search"><svg style="width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.5"><use href="#i-list"/></svg>搜索启动项…</div>
+      </div>
+      <div class="card" style="flex:1;padding:14px 14px 6px">
+        <table class="tbl"><thead><tr>
+          <th style="width:26%">名称</th><th style="width:90px">来源</th><th style="width:60px">状态</th><th>命令</th></tr></thead>
+        <tbody>
+          <tr><td class="strong">MicrosoftEdgeAutoLaunch</td><td>注册表</td><td><span class="toggle on"><i></i></span></td><td>C:\Program Files (x86)\Microsoft\Edge\…</td></tr>
+          <tr><td class="strong">SecurityHealth</td><td>注册表</td><td><span class="toggle on"><i></i></span></td><td>%windir%\system32\SecurityHealthSystray.exe</td></tr>
+          <tr><td class="strong">v2rayNAutoRun</td><td>注册表</td><td><span class="toggle on"><i></i></span></td><td>D:\v2rayN-windows-64\v2rayN.exe</td></tr>
+          <tr><td class="strong">WorkBuddy</td><td>注册表</td><td><span class="toggle on"><i></i></span></td><td>D:\WorkBuddy\WorkBuddy.exe</td></tr>
+          <tr><td class="strong">WorkBuddyAI</td><td>注册表</td><td><span class="toggle on"><i></i></span></td><td>D:\WorkBuddyAI\WorkBuddyAI.exe</td></tr>
+          <tr><td class="strong">OneDrive</td><td>启动文件夹</td><td><span class="toggle"><i></i></span></td><td>C:\Users\Jt\OneDrive.lnk.off</td></tr>
+          <tr><td class="strong">Adobe Updater</td><td>计划任务</td><td><span class="toggle"><i></i></span></td><td>\Adobe\Updater</td></tr>
+          <tr><td class="strong">Teams Machine-Wide</td><td>计划任务</td><td><span class="toggle"><i></i></span></td><td>\Microsoft\Teams</td></tr>
+        </tbody></table>
+      </div>
+      <div style="margin-top:10px;font-size:11.5px;color:var(--text-3)">禁用不会删除任何东西：注册表项改名加 .off 后缀，快捷方式同理，随时可以改回来。</div>
+    </main>
+  </div>
+</div>
+
+<!-- ============ 软件 ============ -->
+<h2 id="p12"><span class="num">15</span>软件</h2>
+<div class="win">
+  <div class="titlebar"><div class="l"><span class="appicon"></span>Windows系统管家</div>
+    <div class="wctl"><span>—</span><span>▢</span><span>✕</span></div></div>
+  <div class="wbody">
+    <aside class="nav">
+      <div class="nav-group">监控</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-home"/></svg>概览</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-cpu"/></svg>CPU</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-mem"/></svg>内存</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-list"/></svg>进程</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-disk"/></svg>磁盘</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-net"/></svg>网络</div>
+      <div class="nav-group">优化</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-health"/></svg>体检</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-clean"/></svg>垃圾清理</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-dup"/></svg>重复文件</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-file"/></svg>大文件</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-power"/></svg>启动项</div>
+      <div class="nav-item active"><svg class="ico"><use href="#i-app"/></svg>软件</div>
+      <div class="nav-foot"><div class="nav-item"><svg class="ico"><use href="#i-set"/></svg>设置</div></div>
+    </aside>
+    <main class="content">
+      <div class="phead"><div><div class="t">软件</div><div class="s">9 个已安装程序 · 合计 5.1 GB</div></div></div>
+      <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">
+        <div class="search"><svg style="width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.5"><use href="#i-list"/></svg>搜索程序名或发行商…</div>
+        <div class="combo">按体积排序<svg class="chev" viewBox="0 0 16 16"><path d="M4 6.5 8 10.5l4-4"/></svg></div>
+        <button class="btn"><svg class="ico"><use href="#i-refresh"/></svg>重新扫描</button>
+      </div>
+      <div class="card" style="flex:1;padding:14px 14px 6px">
+        <table class="tbl"><thead><tr>
+          <th style="width:36%">程序</th><th style="width:100px">版本</th><th style="width:26%">发行商</th>
+          <th style="width:84px">大小</th><th style="width:100px">安装日期</th></tr></thead>
+        <tbody>
+          <tr><td class="strong">WorkBuddy AI</td><td>5.9.4</td><td>Tencent</td><td class="num">1331 MB</td><td>2026-11-06</td></tr>
+          <tr><td class="strong">Microsoft Edge</td><td>142.0.3595.65</td><td>Microsoft Corporation</td><td class="num">812 MB</td><td>2026-03-12</td></tr>
+          <tr><td class="strong">v2rayN</td><td>7.12.3</td><td>v2rayN</td><td class="num">96 MB</td><td>2026-09-01</td></tr>
+          <tr><td class="strong">DeepSeek Harness</td><td>1.4.2</td><td>Hangzhou DeepSeek</td><td class="num">82 MB</td><td>2026-10-18</td></tr>
+          <tr><td class="strong">7-Zip</td><td>24.09</td><td>Igor Pavlov</td><td class="num">5 MB</td><td>2026-02-04</td></tr>
+        </tbody></table>
+      </div>
+      <div style="margin-top:10px;font-size:11.5px;color:var(--text-3)">卸载会打开程序自带的卸载向导，本工具不会静默删除任何文件。</div>
+    </main>
+  </div>
+</div>
+
+<!-- ============ 设置 ============ -->
+<h2 id="p13"><span class="num">16</span>设置</h2>
+<p class="note">照搬 Win11 设置页的样式：分组卡片，每行「标题 + 说明 + 控件」，右侧对齐。内容较多，窗口给到 800 高。</p>
+<div class="win" style="height:800px">
+  <div class="titlebar"><div class="l"><span class="appicon"></span>Windows系统管家</div>
+    <div class="wctl"><span>—</span><span>▢</span><span>✕</span></div></div>
+  <div class="wbody">
+    <aside class="nav">
+      <div class="nav-group">监控</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-home"/></svg>概览</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-cpu"/></svg>CPU</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-mem"/></svg>内存</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-list"/></svg>进程</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-disk"/></svg>磁盘</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-net"/></svg>网络</div>
+      <div class="nav-group">优化</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-health"/></svg>体检</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-clean"/></svg>垃圾清理</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-dup"/></svg>重复文件</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-file"/></svg>大文件</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-power"/></svg>启动项</div>
+      <div class="nav-item"><svg class="ico"><use href="#i-app"/></svg>软件</div>
+      <div class="nav-foot"><div class="nav-item active"><svg class="ico"><use href="#i-set"/></svg>设置</div></div>
+    </aside>
+    <main class="content" style="overflow:auto">
+      <div class="phead"><div><div class="t">设置</div><div class="s">外观、监控、告警与启动</div></div></div>
+
+      <div class="card" style="margin-bottom:12px">
+        <div class="chead"><span class="ct">外观</span></div>
+        <div class="setrow"><div class="l"><b>主题</b><span>跟随系统，或强制浅色 / 深色</span></div>
+          <div class="combo">跟随系统<svg class="chev" viewBox="0 0 16 16"><path d="M4 6.5 8 10.5l4-4"/></svg></div></div>
+        <div class="setrow"><div class="l"><b>强调色</b><span>使用 Windows 系统强调色</span></div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <span style="width:18px;height:18px;border-radius:50%;background:var(--accent)"></span>
+            <span style="width:18px;height:18px;border-radius:50%;background:#c239b3"></span>
+            <span style="width:18px;height:18px;border-radius:50%;background:#00b294"></span>
+            <span style="width:18px;height:18px;border-radius:50%;background:#ff8c00"></span>
+          </div></div>
+      </div>
+
+      <div class="card" style="margin-bottom:12px">
+        <div class="chead"><span class="ct">监控与启动</span></div>
+        <div class="setrow"><div class="l"><b>刷新频率</b><span>指标数据的更新间隔</span></div>
+          <div class="combo">1.0 秒<svg class="chev" viewBox="0 0 16 16"><path d="M4 6.5 8 10.5l4-4"/></svg></div></div>
+        <div class="setrow"><div class="l"><b>最小化到托盘</b><span>不退出程序，保留后台监控</span></div>
+          <span class="toggle on"><i></i></span></div>
+        <div class="setrow"><div class="l"><b>开机自启</b><span>以普通权限静默启动到托盘</span></div>
+          <span class="toggle"><i></i></span></div>
+      </div>
+
+      <div class="card">
+        <div class="chead"><span class="ct">告警与统计</span></div>
+        <div class="setrow"><div class="l"><b>启用告警</b><span>指标异常时弹出通知</span></div>
+          <span class="toggle on"><i></i></span></div>
+        <div class="setrow"><div class="l"><b>CPU 阈值</b><span>持续超过该占用率才告警</span></div>
+          <div style="display:flex;align-items:center;gap:10px;width:220px">
+            <span class="bar"><i style="width:82%"></i></span><span style="font-size:12px;color:var(--text-2)">90%</span></div></div>
+        <div class="setrow"><div class="l"><b>累计优化</b><span>12 次 · 共释放 4.2 GB</span></div>
+          <button class="btn subtle">重置统计</button></div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<h2 style="margin-top:56px"><span class="num">附</span>落地要点</h2>
+<div class="grid g2" style="margin-top:12px">
+  <div class="card">
+    <div class="chead"><span class="ct">和现在的差别</span></div>
+    <div class="rows" style="gap:6px;font-size:12.5px">
+      <div class="row"><span class="n">侧栏 152 → 228，带图标和分组</span></div>
+      <div class="row"><span class="n">正文字号 13 → 14，行高更松</span></div>
+      <div class="row"><span class="n">圆角 10 → 8，描边更淡</span></div>
+      <div class="row"><span class="n">6 套自定义主题 → 明/暗 + 系统强调色</span></div>
+      <div class="row"><span class="n">页面标题 15 → 26，加一行副标题</span></div>
+      <div class="row"><span class="n">表格行高 28 → 30，去掉隔行底色</span></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="chead"><span class="ct">实施顺序</span></div>
+    <div class="rows" style="gap:6px;font-size:12.5px">
+      <div class="row"><span class="n">1. 重写 theme.py：明暗两套 + 系统强调色</span></div>
+      <div class="row"><span class="n">2. 侧栏加图标与分组，宽度 228</span></div>
+      <div class="row"><span class="n">3. 统一卡片 / KPI / 表格样式</span></div>
+      <div class="row"><span class="n">4. 逐页套用（先概览，后其余）</span></div>
+      <div class="row"><span class="n">5. 设置页改成 Win11 分组行样式</span></div>
+    </div>
+  </div>
+</div>
+
+</div>
+</body>
+</html>
