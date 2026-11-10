@@ -369,8 +369,11 @@ class AboutPage(QWidget):
         # 按钮靠右：伸展项放在地址后面，否则两个按钮会紧贴地址挤在行中间
         row.addStretch(1)
 
+        # 用 Ghost 和「复制」「检查更新」保持一致。
+        # 之前用 Tonal，它的 QSS 里带 min-height:30 和左右 16px 内边距，
+        # 和 setFixedSize(56,24) 冲突，文字被挤得贴边，看着像坏了。
         btn_open = QPushButton("打开")
-        btn_open.setObjectName("Tonal")
+        btn_open.setObjectName("Ghost")
         btn_open.setFixedSize(56, 24)
         btn_open.setCursor(Qt.PointingHandCursor)
         btn_open.clicked.connect(lambda _c=False, url=channel.url: self._open_url(url))
