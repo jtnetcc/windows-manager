@@ -221,14 +221,15 @@ class AboutPage(QWidget):
         if info is None:
             return
         if not info.ok:
-            self.btn_update.setText("检查失败，重试")
-            self.btn_update.setToolTip(info.error or "")
+            self.lbl_update.setText("检查失败")
+            self.lbl_update.setStyleSheet(f"color: {T.TEXT_DIM};")
         elif info.has_update:
-            self.btn_update.setText(f"去下载 v{info.latest}")
-            self.btn_update.setToolTip(info.notes or "")
+            self.lbl_update.setText(f"发现新版本 v{info.latest}")
+            self.lbl_update.setStyleSheet(f"color: {T.AMBER};")
+            self.btn_update.setText("去下载")
         else:
-            self.btn_update.setText("已是最新")
-            self.btn_update.setToolTip(f"当前 {version.text()}")
+            self.lbl_update.setText(f"已是最新（{version.text()}）")
+            self.lbl_update.setStyleSheet(f"color: {T.GREEN};")
 
     def _check_update(self) -> None:
         """检查更新。全应用唯一的联网动作，只在点按钮时跑。
@@ -242,8 +243,9 @@ class AboutPage(QWidget):
             return
         self._checking = True
         self.btn_update.setEnabled(False)
-        self.btn_update.setText("正在检查…")
-        self.btn_update.repaint()
+        self.lbl_update.setText("正在检查…")
+        self.lbl_update.setStyleSheet(f"color: {T.TEXT_DIM};")
+        self.lbl_update.repaint()
 
         from core import updater
 
@@ -253,17 +255,21 @@ class AboutPage(QWidget):
         self.btn_update.setEnabled(True)
 
         if not info.ok:
-            self.btn_update.setText("检查失败，重试")
-            self.btn_update.setToolTip(info.error or "")
+            self.lbl_update.setText("检查失败")
+            self.lbl_update.setToolTip(info.error or "")
+            self.lbl_update.setStyleSheet(f"color: {T.TEXT_DIM};")
             return
 
         if not info.has_update:
-            self.btn_update.setText("已是最新")
-            self.btn_update.setToolTip(f"当前 {version.text()}")
+            self.lbl_update.setText(f"已是最新（{version.text()}）")
+            self.lbl_update.setToolTip("")
+            self.lbl_update.setStyleSheet(f"color: {T.GREEN};")
             return
 
-        self.btn_update.setText(f"去下载 v{info.latest}")
-        self.btn_update.setToolTip(info.notes or "")
+        self.lbl_update.setText(f"发现新版本 v{info.latest}")
+        self.lbl_update.setToolTip(info.notes or "")
+        self.lbl_update.setStyleSheet(f"color: {T.AMBER};")
+        self.btn_update.setText("去下载")
         try:
             self.btn_update.clicked.disconnect()
         except (RuntimeError, TypeError):
@@ -321,11 +327,13 @@ class AboutPage(QWidget):
         ver_name.setFixedWidth(62)
         upd.addWidget(ver_name, 0)
 
-        upd.addStretch(1)
+        # 状态用文字，按钮只负责动作：按钮文字一变宽窄就跳，看着更乱
+        self.lbl_update = label("尚未检查", 11, T.TEXT_DIM)
+        upd.addWidget(self.lbl_update, 1)
 
         self.btn_update = QPushButton("检查更新")
         self.btn_update.setObjectName("Ghost")
-        self.btn_update.setFixedHeight(24)
+        self.btn_update.setFixedSize(88, 24)
         self.btn_update.setCursor(Qt.PointingHandCursor)
         self.btn_update.clicked.connect(self._check_update)
         upd.addWidget(self.btn_update, 0)
