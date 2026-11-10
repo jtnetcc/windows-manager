@@ -23,7 +23,7 @@ _HOST = base64.b64decode("anRuZXRjYy5vc3MtY24tYmVpamluZy5hbGl5dW5jcy5jb20=").dec
 _MANIFEST_KEY = "windows-manager/latest/version.json"
 _EXE_KEY = "windows-manager/latest/Windows-Manager.exe"
 
-TIMEOUT = 8
+TIMEOUT = 3
 
 # 上一次检查结果。页面会因为换肤被重建，重建后要能把结果接回去。
 _LAST: UpdateInfo | None = None
