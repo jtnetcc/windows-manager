@@ -242,6 +242,119 @@ def _account_dirs(root: str) -> list[str]:
         return []
 
 
+
+# ---------------------------------------------------------------- 通用探测
+
+# 只清这些名字的目录。不在名单里的一律不碰 —— 宁可少清，不能误删。
+_CACHE_DIR_NAMES = {
+    "cache",
+    "code cache",
+    "gpucache",
+    "dawncache",
+    "grshadercache",
+    "shadercache",
+    "cachestorage",
+    "service worker",
+    "blob_storage",
+}
+
+# 这些目录名看着像缓存，但删了会丢东西，明确排除
+_NEVER = {
+    "cache2",  # Firefox 的缓存数据库目录，结构特殊，走专门规则
+    "user data",
+    "local storage",
+    "indexeddb",
+}
+
+
+# 这些是系统目录或开发工具缓存，不算「装了个软件」，不该出现在列表里
+_SKIP_NAMES = {
+    "microsoft", "packages", "programs", "programsdata", "temp", "tempstate",
+    "crashdumps", "d3dscache", "pip", "fontconfig", "nvidia", "amd", "intel",
+    "google", "mozilla", "connecteddevicesplatform", "comms", "publishercache",
+    "virtualstore", "application data", "history", "icons", "tiles",
+}
+
+
+def _looks_like_cache(name: str) -> bool:
+    low = name.lower()
+    if low in _NEVER:
+        return False
+    return low in _CACHE_DIR_NAMES
+
+
+def _generic_apps(known_roots: set[str]) -> list[App]:
+    """自动发现装在本机的软件里哪些有可清缓存。
+
+    不再依赖写死的清单：直接扫 `%LOCALAPPDATA%` 和 `%APPDATA%` 下面
+    一层/两层目录，看有没有叫 Cache / Code Cache / GPUCache 的子目录。
+
+    判定很保守：
+    - 只认明确的缓存目录名，不做模糊匹配
+    - 一个缓存目录都没找到的软件不出现
+    - 已经在 `_specs()` 里覆盖过的路径跳过，避免重复
+    """
+    apps: list[App] = []
+    bases = [os.environ.get("LOCALAPPDATA", ""), os.environ.get("APPDATA", "")]
+
+    for base in bases:
+        if not base or not os.path.isdir(base):
+            continue
+        try:
+            entries = list(os.scandir(base))
+        except OSError:
+            continue
+
+        for entry in entries:
+            if entry.name.lower() in _SKIP_NAMES:
+                continue
+            try:
+                if not entry.is_dir(follow_symlinks=False):
+                    continue
+            except OSError:
+                continue
+
+            # 一层：%LOCALAPPDATA%\Spotify\Cache
+            # 两层：%LOCALAPPDATA%\Google\Chrome\... 这种交给专门规则
+            found: list[str] = []
+            try:
+                for sub in os.scandir(entry.path):
+                    try:
+                        if not sub.is_dir(follow_symlinks=False):
+                            continue
+                    except OSError:
+                        continue
+                    if _looks_like_cache(sub.name):
+                        found.append(sub.path)
+            except OSError:
+                continue
+
+            if not found:
+                continue
+            if any(os.path.normcase(path) in known_roots for path in found):
+                continue
+
+            size_hint = len(found)
+            apps.append(
+                App(
+                    key=f"auto_{entry.name.lower()}",
+                    name=entry.name,
+                    hint=f"自动识别 · {size_hint} 个缓存目录",
+                    targets=[
+                        Target(
+                            key=f"auto_{entry.name.lower()}_cache",
+                            name="缓存",
+                            kind="cache",
+                            note="程序缓存，删了会自动重建",
+                            order=0,
+                            paths=found,
+                        )
+                    ],
+                )
+            )
+    return apps
+
+
 def discover() -> list[App]:
     """扫描本机装了哪些软件，返回有可清理目录的那些。
 
@@ -283,6 +396,17 @@ def discover() -> list[App]:
                     sorted(targets.values(), key=lambda t: t.order),
                 )
             )
+
+    # 写死的清单之外，再自动补上本机装的其他软件
+    known = {
+        os.path.normcase(path)
+        for app in apps
+        for target in app.targets
+        for path in target.paths
+    }
+    for auto in _generic_apps(known):
+        if not any(a.key == auto.key for a in apps):
+            apps.append(auto)
     return apps
 
 
