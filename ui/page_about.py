@@ -43,7 +43,7 @@ PLEDGES = [
     ("永久免费", "全部功能开放，没有付费版、内购与功能锁"),
     ("开源可查", "源码完整提供，可以自己读、自己改、自己编译"),
     ("无广告无捆绑", "不弹广告、不改主页、不静默装别的软件"),
-    ("不联网", "没有账号体系，不上传文件，也不做使用统计"),
+    ("默认不联网", "没有账号体系，不上传文件、不做统计；只有「检查更新」会主动联网一次"),
 ]
 
 class Channel(NamedTuple):
@@ -62,11 +62,6 @@ CHANNELS = [
         "GitHub",
         "https://github.com/jtnetcc",
         "源码、版本说明与 zip 包都发布在这里",
-    ),
-    Channel(
-        "OSS",
-        "",
-        "版本推送到对象存储后启用，国内访问更快",
     ),
 ]
 
@@ -204,13 +199,78 @@ class AboutPage(QWidget):
         title_row.addStretch(1)
         col.addLayout(title_row)
 
-        col.addWidget(label(f"{version.text()} · 本地运行 · 无需登录", 11, T.TEXT_DIM))
+        ver_row = QHBoxLayout()
+        ver_row.setContentsMargins(0, 0, 0, 0)
+        ver_row.setSpacing(8)
+        ver_row.addWidget(label(f"{version.text()} · 本地运行 · 无需登录", 11, T.TEXT_DIM), 0)
+
+        self.lbl_update = label("", 10, T.TEXT_DIM)
+        ver_row.addWidget(self.lbl_update, 0)
+        ver_row.addStretch(1)
+
+        self.btn_update = QPushButton("检查更新")
+        self.btn_update.setObjectName("Ghost")
+        self.btn_update.setFixedHeight(24)
+        self.btn_update.setCursor(Qt.PointingHandCursor)
+        self.btn_update.clicked.connect(self._check_update)
+        ver_row.addWidget(self.btn_update, 0)
+        col.addLayout(ver_row)
         tagline = label(TAGLINE, 12, T.TEXT_SUB)
         tagline.setWordWrap(True)
         col.addWidget(tagline)
 
         row.addLayout(col, 1)
         return hero
+
+    def _check_update(self) -> None:
+        """检查更新。全应用唯一的联网动作，只在点按钮时跑。
+
+        同步执行 + 先刷一次界面：请求通常 200ms 内返回，超时上限 4 秒。
+        用线程回传会踩跨线程碰控件的坑，不值得为省几百毫秒冒险。
+        """
+        if getattr(self, "_checking", False):
+            return
+        self._checking = True
+        self.btn_update.setEnabled(False)
+        self.lbl_update.setText("正在检查…")
+        self.lbl_update.setStyleSheet(f"color: {T.TEXT_DIM};")
+
+        from PySide6.QtWidgets import QApplication
+
+        QApplication.processEvents()
+
+        from core import updater
+
+        info = updater.check()
+        self._checking = False
+        self.btn_update.setEnabled(True)
+
+        if not info.ok:
+            self.lbl_update.setText("检查失败")
+            self.lbl_update.setToolTip(info.error)
+            self.lbl_update.setStyleSheet(f"color: {T.TEXT_DIM};")
+            return
+
+        if not info.has_update:
+            self.lbl_update.setText("已是最新")
+            self.lbl_update.setToolTip("")
+            self.lbl_update.setStyleSheet(f"color: {T.GREEN};")
+            return
+
+        self.lbl_update.setText(f"发现 v{info.latest}")
+        self.lbl_update.setToolTip(info.notes or "")
+        self.lbl_update.setStyleSheet(f"color: {T.AMBER};")
+        self.btn_update.setText("去下载")
+        try:
+            self.btn_update.clicked.disconnect()
+        except (RuntimeError, TypeError):
+            pass
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+
+        self.btn_update.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl(info.url))
+        )
 
     def _promise_card(self) -> Card:
         card = Card(padding=12, spacing=9)
@@ -353,7 +413,7 @@ class AboutPage(QWidget):
         for channel in CHANNELS:
             if channel.url:
                 lines.append(f"下载地址（{channel.name}）：{channel.url}")
-        lines.append("免费开源 · 无广告 · 不联网")
+        lines.append("免费开源 · 无广告 · 默认不联网")
         copy_text("\n".join(lines))
         self.message.emit("版本信息已复制")
 

@@ -120,6 +120,25 @@ def main() -> int:
         if status != 200:
             failed += 1
 
+    # 清单：给客户端的「检查更新」用。不含任何域名/URL。
+    import json
+    from datetime import datetime
+
+    manifest = {
+        "version": ver,
+        "build_time": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "size": f"{size:.1f} MB",
+        "notes": os.environ.get("RELEASE_NOTES", ""),
+    }
+    manifest_path = ROOT / "dist" / "version.json"
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    status = upload(f"{PREFIX}/latest/version.json", manifest_path, public=public)
+    print(f"  {'✓' if status == 200 else '✗'} {PREFIX}/latest/version.json  ({status})")
+    if status != 200:
+        failed += 1
+
     if not failed:
         print("\n下载地址：")
         for key, _ in targets:
