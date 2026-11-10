@@ -60,7 +60,7 @@ class Channel(NamedTuple):
 CHANNELS = [
     Channel(
         "GitHub",
-        "https://github.com/jtnetcc",
+        "https://github.com/jtnetcc/windows-manager",
         "源码、版本说明与 zip 包都发布在这里",
     ),
 ]
@@ -204,16 +204,7 @@ class AboutPage(QWidget):
         ver_row.setSpacing(8)
         ver_row.addWidget(label(f"{version.text()} · 本地运行 · 无需登录", 11, T.TEXT_DIM), 0)
 
-        self.lbl_update = label("", 10, T.TEXT_DIM)
-        ver_row.addWidget(self.lbl_update, 0)
         ver_row.addStretch(1)
-
-        self.btn_update = QPushButton("检查更新")
-        self.btn_update.setObjectName("Ghost")
-        self.btn_update.setFixedHeight(24)
-        self.btn_update.setCursor(Qt.PointingHandCursor)
-        self.btn_update.clicked.connect(self._check_update)
-        ver_row.addWidget(self.btn_update, 0)
         col.addLayout(ver_row)
         tagline = label(TAGLINE, 12, T.TEXT_SUB)
         tagline.setWordWrap(True)
@@ -246,8 +237,10 @@ class AboutPage(QWidget):
         self.btn_update.setEnabled(True)
 
         if not info.ok:
-            self.lbl_update.setText("检查失败")
-            self.lbl_update.setToolTip(info.error)
+            reason = info.error or "未知原因"
+            short = reason.split("：")[-1][:40]
+            self.lbl_update.setText(f"检查失败：{short}")
+            self.lbl_update.setToolTip(reason)
             self.lbl_update.setStyleSheet(f"color: {T.TEXT_DIM};")
             return
 
@@ -302,6 +295,26 @@ class AboutPage(QWidget):
         card.body().addSpacing(2)
         for channel in CHANNELS:
             card.body().addWidget(self._channel_row(channel))
+
+        # 检查更新放在分发卡里：它就是「怎么拿到新版」的一部分，
+        # 界面只给一个按钮，不暴露具体地址。
+        card.body().addSpacing(4)
+        upd_row = QWidget()
+        upd = QHBoxLayout(upd_row)
+        upd.setContentsMargins(0, 0, 0, 0)
+        upd.setSpacing(10)
+        upd.addWidget(label("检查更新", 12, T.TEXT, QFont.Medium), 0)
+        self.lbl_update = label("", 11, T.TEXT_DIM)
+        upd.addWidget(self.lbl_update, 0)
+        upd.addStretch(1)
+
+        self.btn_update = QPushButton("检查更新")
+        self.btn_update.setObjectName("Ghost")
+        self.btn_update.setFixedHeight(24)
+        self.btn_update.setCursor(Qt.PointingHandCursor)
+        self.btn_update.clicked.connect(self._check_update)
+        upd.addWidget(self.btn_update, 0)
+        card.body().addWidget(upd_row)
         return card
 
     def _channel_row(self, channel: Channel) -> QWidget:
