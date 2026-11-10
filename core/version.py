@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-VERSION = "0.0.22"
+VERSION = "0.0.23"
 CHANNEL = "内测"
 
 

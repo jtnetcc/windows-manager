@@ -34,8 +34,10 @@ sys.path.insert(0, str(ROOT))
 
 from core import version  # noqa: E402
 
-BUCKET = os.environ.get("OSS_BUCKET", "jtnetcc")
-ENDPOINT = os.environ.get("OSS_ENDPOINT", "jtnetcc.oss-cn-beijing.aliyuncs.com")
+# 桶名和 Endpoint 一律从环境变量读，不在源码里写死 ——
+# 这个仓库是公开的，写死等于把分发地址公开。
+BUCKET = os.environ.get("OSS_BUCKET", "")
+ENDPOINT = os.environ.get("OSS_ENDPOINT", "")
 PREFIX = "windows-manager"
 
 
@@ -88,7 +90,7 @@ def main() -> int:
     parser.add_argument("--private", action="store_true", help="不设 public-read")
     args = parser.parse_args()
 
-    for name in ("OSS_AK", "OSS_SK"):
+    for name in ("OSS_AK", "OSS_SK", "OSS_BUCKET", "OSS_ENDPOINT"):
         if not os.environ.get(name):
             print(f"缺少环境变量 {name}")
             return 1
@@ -124,10 +126,14 @@ def main() -> int:
     import json
     from datetime import datetime
 
+    import hashlib
+
+    digest = hashlib.sha256(exe.read_bytes()).hexdigest()
     manifest = {
         "version": ver,
         "build_time": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "size": f"{size:.1f} MB",
+        "sha256": digest,
         "notes": os.environ.get("RELEASE_NOTES", ""),
     }
     manifest_path = ROOT / "dist" / "version.json"
