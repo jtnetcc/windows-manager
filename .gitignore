@@ -27,8 +27,9 @@ _reference/
 Thumbs.db
 desktop.ini
 
-# 开发截图与临时日志
+# 开发截图与临时日志（正式截图放 docs/preview/）
 shot_*.png
+/preview_*.png
 *.log
 
 # 本地配置（含机器相关的设置）
