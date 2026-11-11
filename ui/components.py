@@ -513,7 +513,7 @@ class TrendChart(QWidget):
 
 
 class CoreTiles(QWidget):
-    """每核占用：一个核心一块方砖，底色深浅与底部比例线表示负载。
+    """每核占用：一个核心一块方砖，底色深浅表示负载。
 
     原来是竖柱。四核机器上四根柱子被拉到跟卡片一样高，一大片全是空轨道，
     反而看不出谁在忙；方砖在小核数时不空旷，核多时按 8 列折行，32 线程也
@@ -521,12 +521,10 @@ class CoreTiles(QWidget):
     砖块只承担「一眼看出哪几核在忙」。
     """
 
-    def __init__(self, compact: bool = False, parent=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self._compact = compact
         self._values: list[float] = []
-        # 概览页只给一行的高度；CPU 页给足，砖块最长到 76
-        self.setMinimumHeight(34 if compact else 96)
+        self.setMinimumHeight(96)
 
     def set_values(self, values: list[float]) -> None:
         self._values = list(values)
@@ -542,35 +540,27 @@ class CoreTiles(QWidget):
             return
 
         count = len(values)
-        gap = 4 if self._compact else 6
-        if self._compact:
-            # 概览页只有一行高度：横着排满，方块封顶 26
-            cols = max(1, min(count, 8))
-            rows = math.ceil(count / cols)
-            cap = 26.0
-            tile_w = min((self.width() - gap * (cols - 1)) / cols, cap)
-            tile_h = min((self.height() - gap * (rows - 1)) / rows, cap)
-        else:
-            # CPU 页的卡片很高，固定一排会让方块缩在中间、上下全空。
-            # 这里按「格子尽量接近正方形」挑列数：4 核排 2×2、8 核 3×3、
-            # 16 核 4×4，砖块自然把卡片填满。
-            cols, tile_w, tile_h = 1, 0.0, 0.0
-            best = None
-            for candidate in range(1, min(count, 8) + 1):
-                r = math.ceil(count / candidate)
-                w = (self.width() - gap * (candidate - 1)) / candidate
-                h = (self.height() - gap * (r - 1)) / r
-                ratio = max(w / h, h / w) if h > 0 else 99
-                # 越方越好，但别留下空格子：4 核排成 3 列会在右下角空一块，
-                # 看着像少画了一个核，宁可稍微扁一点也排成 2×2
-                empty = candidate * r - count
-                score = (round(ratio + empty * 0.45, 2), -w * h)
-                if best is None or score < best:
-                    best, cols, tile_w, tile_h = score, candidate, w, h
-            # 太瘦的柱子又会变成原来那种「高而空」，压一下宽高比
-            if tile_h > tile_w * 1.8:
-                tile_h = tile_w * 1.8
-            rows = math.ceil(count / cols)
+        gap = 6
+        # 卡片很高，固定一排会让方块缩在中间、上下全空。这里按「格子尽量
+        # 接近正方形」挑列数：4 核排 2×2、8 核 3×3、16 核 4×4，砖块自然
+        # 把卡片填满。
+        cols, tile_w, tile_h = 1, 0.0, 0.0
+        best = None
+        for candidate in range(1, min(count, 8) + 1):
+            r = math.ceil(count / candidate)
+            w = (self.width() - gap * (candidate - 1)) / candidate
+            h = (self.height() - gap * (r - 1)) / r
+            ratio = max(w / h, h / w) if h > 0 else 99
+            # 越方越好，但别留下空格子：4 核排成 3 列会在右下角空一块，
+            # 看着像少画了一个核，宁可稍微扁一点也排成 2×2
+            empty = candidate * r - count
+            score = (round(ratio + empty * 0.45, 2), -w * h)
+            if best is None or score < best:
+                best, cols, tile_w, tile_h = score, candidate, w, h
+        # 太瘦的柱子又会变成原来那种「高而空」，压一下宽高比
+        if tile_h > tile_w * 1.8:
+            tile_h = tile_w * 1.8
+        rows = math.ceil(count / cols)
 
         total_w = tile_w * cols + gap * (cols - 1)
         total_h = tile_h * rows + gap * (rows - 1)
@@ -596,25 +586,11 @@ class CoreTiles(QWidget):
             painter.setBrush(heat)
             painter.drawRoundedRect(rect, radius, radius)
 
-            # 小砖块没有文字，底部这条比例线就是唯一的读数
-            if self._compact and load > 0.5:
-                bar_h = max(2.0, min(tile_h, tile_w) * 0.07)
-                painter.setBrush(QColor(T.load_color(value)))
-                painter.drawRoundedRect(
-                    QRectF(
-                        rect.left() + radius * 0.5,
-                        rect.bottom() - bar_h - radius * 0.5,
-                        (tile_w - radius) * load / 100,
-                        bar_h,
-                    ),
-                    bar_h / 2,
-                    bar_h / 2,
-                )
-
+            # 砖块太小时写不下字，光靠底色区分
             short = min(tile_w, tile_h)
-            if self._compact or short < 24:
-                pass
-            elif short >= 54:
+            if short < 24:
+                continue
+            if short >= 54:
                 # 砖块够大时写全信息：左上「核 N」、中间百分比，等于一张小卡片
                 painter.setPen(QColor(T.TEXT_DIM))
                 painter.setFont(font(9))
@@ -819,7 +795,27 @@ class Segmented(QWidget):
         painter.end()
 
 
-class NavButton(QWidget):
+class HoverMixin:
+    """鼠标悬停状态。子类在 paintEvent 里读 `self._hover` 决定底色。
+
+    可点行和自绘小控件原来各写一遍 enterEvent / leaveEvent，一共六份。
+    复制时最容易漏的是 `update()`，表现就是「移上去不变色、移开才变色」，
+    所以收成一份。子类如果还要处理别的状态（比如按下态），覆盖时记得
+    调一次 super()。
+    """
+
+    _hover = False
+
+    def enterEvent(self, event) -> None:
+        self._hover = True
+        self.update()
+
+    def leaveEvent(self, event) -> None:
+        self._hover = False
+        self.update()
+
+
+class NavButton(HoverMixin, QWidget):
     """侧栏导航项（Win11 NavigationView 样式）。
 
     选中态 = 卡片底色 + 左侧 3×16 强调色竖条，和系统设置一致。
@@ -838,7 +834,6 @@ class NavButton(QWidget):
         self._text = text
         self._icon = icon
         self._active = False
-        self._hover = False
         self._pressed = False
         self._on_click = on_click
         self.setFixedHeight(self.ROW_HEIGHT)
@@ -852,15 +847,11 @@ class NavButton(QWidget):
             self._active = active
             self.update()
 
-    def enterEvent(self, event) -> None:
-        self._hover = True
-        self.update()
-
     def leaveEvent(self, event) -> None:
-        self._hover = False
+        # 按下后拖出范围再松开算取消，所以离开时除了清悬停还要清按下态
         if self._pressed:
             self._pressed = False
-        self.update()
+        super().leaveEvent(event)
 
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.LeftButton:
@@ -957,7 +948,7 @@ class ComboBox(QComboBox):
         painter.end()
 
 
-class CheckBox(QAbstractButton):
+class CheckBox(HoverMixin, QAbstractButton):
     """自绘复选框。
 
     样式表里没法给 QCheckBox 的指示器画对勾（只能填一块纯色），
@@ -970,16 +961,7 @@ class CheckBox(QAbstractButton):
         self.setFixedSize(16, 16)
         self.setCursor(Qt.PointingHandCursor)
         self.setFocusPolicy(Qt.NoFocus)
-        self._hover = False
         self.setChecked(True)
-
-    def enterEvent(self, event) -> None:
-        self._hover = True
-        self.update()
-
-    def leaveEvent(self, event) -> None:
-        self._hover = False
-        self.update()
 
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
@@ -1198,7 +1180,7 @@ class RankList(QWidget):
         self.set_rows([])
 
 
-class AccentDot(QWidget):
+class AccentDot(HoverMixin, QWidget):
     """强调色选择点：一个圆点，选中时外面套一圈描边。
 
     `system=True` 的那个点代表「跟随 Windows 强调色」，它显示的颜色就是
@@ -1215,7 +1197,6 @@ class AccentDot(QWidget):
         self._value = color if value is None else value
         self._system = system
         self._selected = selected
-        self._hover = False
         self.setFixedSize(24, 24)
         self.setCursor(Qt.PointingHandCursor)
         self.setAttribute(Qt.WA_Hover, True)
@@ -1238,14 +1219,6 @@ class AccentDot(QWidget):
         if self._selected != selected:
             self._selected = selected
             self.update()
-
-    def enterEvent(self, event) -> None:
-        self._hover = True
-        self.update()
-
-    def leaveEvent(self, event) -> None:
-        self._hover = False
-        self.update()
 
     def mouseReleaseEvent(self, event) -> None:
         if event.button() == Qt.LeftButton and self.rect().contains(

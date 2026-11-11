@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from core import sysinfo
+from core.winmem import fmt_size
 
 from . import theme_dark as T
 from .components import Card, label
@@ -181,7 +182,7 @@ class SysInfoPage(QWidget):
         )
         self.row_cpu["插槽"].set_value(info.cpu_socket)
 
-        self.row_mem["总容量"].set_value(sysinfo.fmt_size(info.memory_total))
+        self.row_mem["总容量"].set_value(fmt_size(info.memory_total))
         self.lbl_slots.setText(
             f"{info.memory_used_slots} / {info.memory_slots} 槽在用"
             if info.memory_slots
@@ -196,7 +197,7 @@ class SysInfoPage(QWidget):
             for module in info.memory_modules:
                 line = InfoRow(
                     module.slot or "插槽",
-                    f"{sysinfo.fmt_size(module.size)}"
+                    f"{fmt_size(module.size)}"
                     + (f" · {module.speed} MT/s" if module.speed else "")
                     + (f" · {module.manufacturer}" if module.manufacturer else ""),
                 )

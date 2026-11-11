@@ -14,7 +14,7 @@ import platform
 from typing import NamedTuple
 
 from PySide6 import __version__ as PYSIDE_VERSION
-from PySide6.QtCore import Qt, QTimer, Signal, qVersion
+from PySide6.QtCore import Qt, Signal, qVersion
 from PySide6.QtGui import QFont, QPixmap
 from PySide6.QtWidgets import (
     QGridLayout,

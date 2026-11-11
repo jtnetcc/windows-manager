@@ -183,5 +183,4 @@ class TasksPage(QWidget):
         self.start_scan()
 
     def shutdown(self) -> None:
-        if self.tasks.is_busy("tasks"):
-            self.tasks.cancel("tasks")
+        self.tasks.cancel_many("tasks")

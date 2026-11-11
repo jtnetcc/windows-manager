@@ -9,7 +9,6 @@ URL 本身留在本模块里（轻度编码，避免被字符串扫描直接抓�
 
 from __future__ import annotations
 
-import base64
 import json
 import urllib.error
 import urllib.request

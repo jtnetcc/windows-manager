@@ -190,5 +190,4 @@ class RecyclePage(QWidget):
         self.start_scan()
 
     def shutdown(self) -> None:
-        if self.tasks.is_busy("recycle"):
-            self.tasks.cancel("recycle")
+        self.tasks.cancel_many("recycle")

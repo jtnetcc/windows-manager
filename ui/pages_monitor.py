@@ -36,6 +36,7 @@ from .components import (
     TrendChart,
     label,
 )
+from .feed import feed
 from .page_process import ProcessPage
 
 KPI_HEIGHT = 66
@@ -934,14 +935,7 @@ class MonitorPage(QWidget):
 
         self._pages[key] = page
         self.stack.addWidget(page)
-        if self._last_snap is not None:
-            feed = getattr(page, "update_metrics", None)
-            if feed is not None:
-                feed(self._last_snap)
-        if self._last_proc is not None:
-            feed_proc = getattr(page, "update_processes", None)
-            if feed_proc is not None:
-                feed_proc(*self._last_proc)
+        feed(page, self._last_snap, self._last_proc)
         return page
 
     def _apply(self, key: str) -> None:

@@ -29,7 +29,7 @@ from core import appclean
 from core.metrics import fmt_bytes
 
 from . import theme_dark as T
-from .components import Card, CheckBox, MiniBar, SegmentBar, label
+from .components import Card, CheckBox, HoverMixin, MiniBar, SegmentBar, label
 
 KIND_COLORS = {
     "image": T.CYAN,
@@ -53,7 +53,7 @@ def _short_path(path: str, keep_tail: int = 3) -> str:
     return "\\".join(parts[:2] + ["…"] + parts[-keep_tail:])
 
 
-class AppRow(QWidget):
+class AppRow(HoverMixin, QWidget):
     """左侧一个软件：名称 + 体积 + 类目数 + 占比条。整行可点。"""
 
     HEIGHT = 64
@@ -62,7 +62,6 @@ class AppRow(QWidget):
     def __init__(self, app: appclean.App, parent=None):
         super().__init__(parent)
         self.app = app
-        self._hover = False
         self._selected = False
         self.setFixedHeight(self.HEIGHT)
         self.setCursor(Qt.PointingHandCursor)
@@ -113,13 +112,6 @@ class AppRow(QWidget):
             return
         super().mouseReleaseEvent(event)
 
-    def enterEvent(self, event) -> None:
-        self._hover = True
-        self.update()
-
-    def leaveEvent(self, event) -> None:
-        self._hover = False
-        self.update()
 
     def paintEvent(self, event) -> None:
         if not (self._hover or self._selected):
@@ -136,7 +128,7 @@ class AppRow(QWidget):
         painter.end()
 
 
-class KindRow(QWidget):
+class KindRow(HoverMixin, QWidget):
     """右侧一类内容：勾选框 + 名称 + 数字，第二行是「删了会怎样」。
 
     说明文字必须单独一行：放在同一行时被右侧两列数字挤成「删了会重新下…」，
@@ -148,7 +140,6 @@ class KindRow(QWidget):
     def __init__(self, item: appclean.TargetStat, checked: bool, parent=None):
         super().__init__(parent)
         self.item = item
-        self._hover = False
         self.setFixedHeight(self.HEIGHT)
         self.setCursor(Qt.PointingHandCursor)
         self.setAttribute(Qt.WA_Hover, True)
@@ -226,13 +217,6 @@ class KindRow(QWidget):
             return
         super().mouseReleaseEvent(event)
 
-    def enterEvent(self, event) -> None:
-        self._hover = True
-        self.update()
-
-    def leaveEvent(self, event) -> None:
-        self._hover = False
-        self.update()
 
     def paintEvent(self, event) -> None:
         if not self._hover or not self.check.isEnabled():
@@ -717,6 +701,4 @@ class AppCleanPage(QWidget):
         self._sync_buttons()
 
     def shutdown(self) -> None:
-        for task_id in ("appclean_scan", "appclean_purge"):
-            if self.tasks.is_busy(task_id):
-                self.tasks.cancel(task_id)
+        self.tasks.cancel_many("appclean_scan", "appclean_purge")

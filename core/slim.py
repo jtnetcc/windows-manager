@@ -20,11 +20,10 @@ import winreg
 from dataclasses import dataclass
 from typing import Callable
 
+from .winpath import HKCU, HKLM, hive, system_drive
+
 CREATE_NO_WINDOW = 0x08000000
 _SYSTEM32 = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "System32")
-
-HKCU = "HKCU"
-HKLM = "HKLM"
 
 # 分组：key → (标题, 一句话说明)
 GROUPS: list[tuple[str, str, str]] = [
@@ -38,15 +37,11 @@ GROUPS: list[tuple[str, str, str]] = [
 # ---------------------------------------------------------------- 注册表读写
 
 
-def _hive(name: str) -> int:
-    return winreg.HKEY_CURRENT_USER if name == HKCU else winreg.HKEY_LOCAL_MACHINE
-
-
 def reg_get(path: str, value: str):
     """读一个值；键或值不存在都返回 None。"""
-    hive, sub = path.split("\\", 1)
+    hive_name, sub = path.split("\\", 1)
     try:
-        with winreg.OpenKey(_hive(hive), sub, 0, winreg.KEY_READ) as key:
+        with winreg.OpenKey(hive(hive_name), sub, 0, winreg.KEY_READ) as key:
             data, _kind = winreg.QueryValueEx(key, value)
             return data
     except OSError:
@@ -59,15 +54,15 @@ def reg_set(path: str, value: str, data) -> None:
     删的时候键可能整个不存在（本来就没改过），这时什么都不用做 ——
     Windows 没有 CreateKey 过的键，读出来就是默认值。
     """
-    hive, sub = path.split("\\", 1)
+    hive_name, sub = path.split("\\", 1)
     if data is None:
         try:
-            with winreg.OpenKey(_hive(hive), sub, 0, winreg.KEY_SET_VALUE) as key:
+            with winreg.OpenKey(hive(hive_name), sub, 0, winreg.KEY_SET_VALUE) as key:
                 winreg.DeleteValue(key, value)
         except FileNotFoundError:
             pass
         return
-    with winreg.CreateKeyEx(_hive(hive), sub, 0, winreg.KEY_SET_VALUE) as key:
+    with winreg.CreateKeyEx(hive(hive_name), sub, 0, winreg.KEY_SET_VALUE) as key:
         winreg.SetValueEx(key, value, 0, winreg.REG_DWORD, int(data))
 
 
@@ -363,12 +358,8 @@ def _walk_size(path: str, limit: int = 60000) -> int:
     return total
 
 
-def _system_drive() -> str:
-    return (os.environ.get("SystemDrive") or "C:").rstrip("\\") + "\\"
-
-
 def hiberfil_path() -> str:
-    return _system_drive() + "hiberfil.sys"
+    return system_drive() + "hiberfil.sys"
 
 
 def hibernation_on() -> bool:
@@ -398,7 +389,7 @@ def _hiber_on() -> None:
 
 
 def _windows_old() -> str:
-    return _system_drive() + "Windows.old"
+    return system_drive() + "Windows.old"
 
 
 def _old_size() -> int:

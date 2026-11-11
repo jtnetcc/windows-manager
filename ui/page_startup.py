@@ -115,8 +115,7 @@ class StartupPage(QWidget):
         self.lbl_count.setText("已取消")
 
     def shutdown(self) -> None:
-        if self.tasks.is_busy("startup"):
-            self.tasks.cancel("startup")
+        self.tasks.cancel_many("startup")
 
     def _render_startup(self) -> None:
         self._entries = list(self.store.startup.entries)

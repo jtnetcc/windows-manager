@@ -74,7 +74,7 @@ class BigFilePage(QWidget):
         self.tasks = tasks
         self._files: list[bigfile.BigFile] = []
         self._rows: list[bigfile.BigFile] = []
-        self._roots = bigfile.default_roots()
+        self._roots = bigfile.preset_roots("home")
         self._checked: set[str] = set()
         self._filter = "all"
         self._scan_kind = "all"
@@ -486,9 +486,7 @@ class BigFilePage(QWidget):
             self.lbl_stat.setText("已取消删除")
 
     def shutdown(self) -> None:
-        for task_id in ("bigfile", "bigfile_clean"):
-            if self.tasks.is_busy(task_id):
-                self.tasks.cancel(task_id)
+        self.tasks.cancel_many("bigfile", "bigfile_clean")
 
     def _render_bigfile(self) -> None:
         state = self.store.bigfile

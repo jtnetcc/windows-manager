@@ -60,6 +60,7 @@ from core.task import TaskCenter
 
 from . import appicon, icons, theme_dark as T, tooltip
 from .components import NavButton, label
+from .feed import feed
 
 # 十四个页面模块不再在这里导入：启动只建首屏那一页，模块也跟着按需加载
 # （见 _create_page）。全部导入光模块就要多占 9 MB 常驻内存，而其中大半
@@ -322,28 +323,6 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(6000, self._auto_check_update)
 
     # ---------------------------------------------------------- 界面
-
-    def _build_toast(self) -> None:
-        """浮层提示只建一次，重建界面时复用，否则每次换肤都会多留一个。"""
-        self._toast = QLabel(self)
-        self._toast.setAlignment(Qt.AlignCenter)
-        self._toast.hide()
-        self._toast_timer = QTimer(self)
-        self._toast_timer.setSingleShot(True)
-        self._toast_timer.timeout.connect(self._toast.hide)
-
-    # ---------------------------------------------------------- 提示框
-
-    def _live_tip(self):
-        """取可用的提示框。换肤重建后旧的 C++ 对象可能已被销毁，
-        这时 eventFilter 里一碰就抛异常，而异常会让**整个鼠标事件被吞掉** ——
-        表现就是「点击导航没反应」。所以每次用之前确认一下，坏了就重建。
-        """
-        try:
-            self._tip.isVisible()
-        except RuntimeError:
-            self._tip = tooltip.Tip()
-        return self._tip
 
     def _build_toast(self) -> None:
         """浮层提示只建一次，重建界面时复用，否则每次换肤都会多留一个。"""
@@ -632,16 +611,15 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(page)
         # 建好立刻喂一帧：不填的话切进来要先空一两个采样周期，
         # 看起来像「这页没数据」
-        if self._snapshot is not None:
-            feed = getattr(page, "update_metrics", None)
-            if feed is not None:
-                feed(self._snapshot)
-        if self._last_proc_rows:
-            feed_proc = getattr(page, "update_processes", None)
-            if feed_proc is not None:
-                total = self._snapshot.memory.total if self._snapshot else 0
-                feed_proc(self._last_proc_rows, total, self._leaks)
+        feed(page, self._snapshot, self._proc_frame())
         return page
+
+    def _proc_frame(self) -> tuple | None:
+        """最近一帧进程数据，拼成页面约定的 (rows, 物理内存总量, 泄漏 pid)。"""
+        if not self._last_proc_rows:
+            return None
+        total = self._snapshot.memory.total if self._snapshot else 0
+        return (self._last_proc_rows, total, self._leaks)
 
     def _create_page(self, key: str) -> QWidget | None:
         """按 key 造页面。模块导入写在分支里，不打开的页连 import 都省了。"""
@@ -752,6 +730,8 @@ class MainWindow(QMainWindow):
             page.set_memory_status(text, color)
 
     def switch_page(self, key: str) -> None:
+        # 建页时 _ensure_page 已经喂过一帧，这里只补「本来就在、只是切回来」的情况
+        existed = key in self._pages
         page = self._ensure_page(key)
         if page is None:
             # 静默返回会让「导航项和 _pages 对不上」这种错误藏很久：
@@ -774,8 +754,9 @@ class MainWindow(QMainWindow):
         # 分隔线是「状态 | 动作」之间的，动作没了就别留一根竖线挂在右上角
         self._header_divider.setVisible(show_opt)
         self._refresh_status_bar()
-        if self._snapshot is not None and hasattr(page, "update_metrics"):
-            page.update_metrics(self._snapshot)
+        if existed:
+            # 这一页可能停在后台好几分钟，切回来先补一帧最新的
+            feed(page, self._snapshot, self._proc_frame())
         self._lazy_start(key)
         if key == "settings":
             self._refresh_cooldown_text()
@@ -909,9 +890,7 @@ class MainWindow(QMainWindow):
     def _on_task_cancelled(self, task_id: str) -> None:
         if task_id != "optimize":
             return
-        self._optimizing = False
-        self.btn_optimize.setEnabled(True)
-        self.btn_optimize.setText("一键优化")
+        self._set_optimizing(False)
         self._set_memory_status("已取消", T.TEXT_DIM)
 
     def _on_task_failed(self, task_id: str, label: str, error: str) -> None:
@@ -1140,6 +1119,13 @@ class MainWindow(QMainWindow):
 
     # ---------------------------------------------------------- 优化
 
+    def _set_optimizing(self, busy: bool) -> None:
+        """一键优化按钮的忙碌态。开始、取消、完成三条路都走这里，
+        免得其中一条忘了恢复按钮，界面就永远卡在「优化中…」。"""
+        self._optimizing = busy
+        self.btn_optimize.setEnabled(not busy)
+        self.btn_optimize.setText("优化中…" if busy else "一键优化")
+
     def run_optimize(self, auto: bool = False) -> None:
         """一键优化：扫垃圾 → 清理 → 整理内存 → 汇总建议。
 
@@ -1148,10 +1134,8 @@ class MainWindow(QMainWindow):
         """
         if self.tasks.is_busy("optimize"):
             return
-        self._optimizing = True
         self._optimize_auto = auto
-        self.btn_optimize.setEnabled(False)
-        self.btn_optimize.setText("优化中…")
+        self._set_optimizing(True)
         self._set_memory_status("正在优化…", T.TEXT_SUB)
 
         self.tasks.submit(
@@ -1161,9 +1145,7 @@ class MainWindow(QMainWindow):
         )
 
     def _on_optimized(self, report, auto: bool) -> None:
-        self._optimizing = False
-        self.btn_optimize.setEnabled(True)
-        self.btn_optimize.setText("一键优化")
+        self._set_optimizing(False)
 
         freed = report.freed if report else 0
         dup_left = self.store.dup.wasted if self.store.dup.ready else 0
@@ -1565,6 +1547,12 @@ class MainWindow(QMainWindow):
                 pass
 
     def _shutdown(self) -> None:
+        # 先摘掉全局事件过滤器：它挂在 QApplication 上，比窗口活得久，
+        # 退出时 Qt 还在往半销毁的控件发事件，就会在 atexit 里刷一串
+        # 「Internal C++ object already deleted」
+        app = QApplication.instance()
+        if app is not None:
+            app.removeEventFilter(self)
         self._stop_page_workers()
         # 页面只取消自己的任务，排队中的其它任务还挂在任务中心里。
         # 不在这里收尾的话，退出时 QThread 可能正在跑 —— 「QThread:

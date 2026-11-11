@@ -16,7 +16,6 @@ from __future__ import annotations
 import ctypes
 import os
 import re
-import string
 import struct
 import subprocess
 import time
@@ -24,6 +23,8 @@ import winreg
 from ctypes import wintypes
 from dataclasses import dataclass
 from functools import lru_cache
+
+from . import winpath
 
 # 显式指定 32/64 位视图。原来靠 WOW6432Node 路径区分，只在 64 位 Python 下成立；
 # 32 位进程打开 HKLM\SOFTWARE 会被系统重定向到 WOW6432Node，
@@ -355,23 +356,10 @@ def _dir_size(path: str, deadline: float) -> int:
     return total
 
 
-def _fixed_drives() -> list[str]:
-    """本地固定磁盘（跳过光驱、U 盘、网络盘，扫它们又慢又没意义）。"""
-    drives: list[str] = []
-    mask = ctypes.windll.kernel32.GetLogicalDrives()
-    for index, letter in enumerate(string.ascii_uppercase):
-        if not mask & (1 << index):
-            continue
-        root = f"{letter}:\\"
-        if ctypes.windll.kernel32.GetDriveTypeW(root) == 3:  # DRIVE_FIXED
-            drives.append(root)
-    return drives
-
-
 def _scan_roots() -> list[tuple[str, int]]:
     """(起点, 往下几层)。盘符根目录浅一点，Program Files 里往往还套一层。"""
     roots: list[tuple[str, int]] = []
-    for drive in _fixed_drives():
+    for drive in winpath.fixed_drives():
         roots.append((drive, 2))
         for sub in ("Program Files", "Program Files (x86)"):
             path = os.path.join(drive, sub)

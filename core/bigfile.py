@@ -8,13 +8,11 @@
 
 from __future__ import annotations
 
-import ctypes
 import os
-import string
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import safety, trash
+from . import safety, trash, winpath
 from .dup import SKIP_DIR_NAMES
 
 PROGRESS_EVERY = 500
@@ -135,24 +133,6 @@ PRESETS: list[tuple[str, str]] = [
 ]
 
 
-def _fixed_drives() -> list[str]:
-    drives: list[str] = []
-    try:
-        mask = ctypes.windll.kernel32.GetLogicalDrives()
-    except Exception:
-        return drives
-    for index, letter in enumerate(string.ascii_uppercase):
-        if not mask & (1 << index):
-            continue
-        root = f"{letter}:\\"
-        try:
-            if ctypes.windll.kernel32.GetDriveTypeW(root) == 3:  # DRIVE_FIXED
-                drives.append(root)
-        except Exception:
-            continue
-    return drives
-
-
 def _user_dirs(*names: str) -> list[str]:
     home = Path.home()
     found = []
@@ -166,7 +146,7 @@ def _user_dirs(*names: str) -> list[str]:
 def preset_roots(key: str) -> list[str]:
     """把界面上的「扫描范围」翻译成目录列表。"""
     if key == "home":
-        return [str(Path.home())]
+        return winpath.home_roots()
     if key == "downloads":
         return _user_dirs("Downloads", "下载")
     if key == "desktop":
@@ -174,12 +154,8 @@ def preset_roots(key: str) -> list[str]:
     if key == "media":
         return _user_dirs("Videos", "视频", "Pictures", "图片", "Music", "音乐")
     if key == "drives":
-        return _fixed_drives()
+        return winpath.fixed_drives()
     return []
-
-
-def default_roots() -> list[str]:
-    return [str(Path.home())]
 
 
 # ------------------------------------------------------------------ 扫描

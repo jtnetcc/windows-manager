@@ -392,10 +392,3 @@ def collect() -> SysInfo:
         except Exception:
             continue
     return info
-
-
-def fmt_size(size: int) -> str:
-    """字节格式化。统一实现在 winmem.fmt_size。"""
-    from .winmem import fmt_size as _fmt
-
-    return _fmt(size)

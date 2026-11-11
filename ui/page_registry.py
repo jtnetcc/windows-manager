@@ -244,5 +244,4 @@ class RegistryPage(QWidget):
         self.lbl_hint.setText(message.replace("\n", " · "))
 
     def shutdown(self) -> None:
-        if self.tasks.is_busy("registry"):
-            self.tasks.cancel("registry")
+        self.tasks.cancel_many("registry")

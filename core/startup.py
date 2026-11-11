@@ -21,6 +21,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import winpath
+
 DISABLED_SUFFIX = ".off"
 
 # 扫描计划任务要跑一次 schtasks，比较慢，缓存一段时间
@@ -35,17 +37,6 @@ RUN_KEYS = (
     ("HKLM", r"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Run"),
     ("HKLM", r"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\RunOnce"),
 )
-
-_HIVES = {}
-
-
-def _hive(name: str):
-    import winreg
-
-    if not _HIVES:
-        _HIVES.update({"HKCU": winreg.HKEY_CURRENT_USER, "HKLM": winreg.HKEY_LOCAL_MACHINE})
-    return _HIVES[name]
-
 
 @dataclass
 class StartupEntry:
@@ -74,7 +65,7 @@ def _registry_entries() -> list[StartupEntry]:
     out: list[StartupEntry] = []
     for hive_name, sub in RUN_KEYS:
         try:
-            key = winreg.OpenKey(_hive(hive_name), sub, 0, winreg.KEY_READ)
+            key = winreg.OpenKey(winpath.hive(hive_name), sub, 0, winreg.KEY_READ)
         except OSError:
             continue
         try:
@@ -118,7 +109,7 @@ def _set_registry_enabled(entry_id: str, enabled: bool) -> tuple[bool, str]:
 
     target = name[: -len(DISABLED_SUFFIX)] if enabled else name + DISABLED_SUFFIX
     try:
-        key = winreg.OpenKey(_hive(hive_name), sub, 0, winreg.KEY_ALL_ACCESS)
+        key = winreg.OpenKey(winpath.hive(hive_name), sub, 0, winreg.KEY_ALL_ACCESS)
     except OSError as exc:
         return False, f"无法打开注册表项：{exc}"
 

@@ -162,8 +162,7 @@ class SoftwarePage(QWidget):
         self._apply_filter()
 
     def shutdown(self) -> None:
-        if self.tasks.is_busy("software"):
-            self.tasks.cancel("software")
+        self.tasks.cancel_many("software")
 
     def _apply_filter(self) -> None:
         keyword = self.search.text().strip().lower()

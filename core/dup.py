@@ -14,7 +14,6 @@ from __future__ import annotations
 import hashlib
 import os
 from dataclasses import dataclass, field
-from pathlib import Path
 
 HEAD_BYTES = 4096
 CHUNK = 1024 * 1024
@@ -196,7 +195,3 @@ def cleanup_list(groups: list[DupGroup], keep_one: bool = True) -> list[str]:
         else:
             victims.extend(group.files)
     return victims
-
-
-def default_roots() -> list[str]:
-    return [str(Path.home())]
