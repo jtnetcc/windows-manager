@@ -14,6 +14,7 @@ from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QHBoxLayout,
+    QLabel,
     QPushButton,
     QStackedWidget,
     QVBoxLayout,
@@ -98,11 +99,66 @@ def _card_title(text: str, note: str = "") -> tuple[Card, QWidget]:
     return card, note_label
 
 
-def _core_text(cpu) -> str:
-    """核数文案：有超线程才写两个数字，否则「4 核 4 线程」读着别扭。"""
-    if cpu.physical and cpu.physical != cpu.logical:
-        return f"{cpu.physical} 核 {cpu.logical} 线程"
-    return f"{cpu.logical} 核"
+def _freq_text(mhz: float) -> str:
+    """频率文案：过 1 GHz 换成 GHz，四位数的 MHz 在概览的窄卡里太长。"""
+    if mhz >= 1000:
+        return f"{mhz / 1000:.1f} GHz"
+    return f"{mhz:.0f} MHz" if mhz > 0 else "—"
+
+
+def _uptime_text(seconds: float) -> str:
+    """开机时长。到天后只说「天 + 小时」，分钟级别在这里没人看。"""
+    total = int(max(0.0, seconds))
+    days, rest = divmod(total, 86400)
+    hours, rest = divmod(rest, 3600)
+    minutes = rest // 60
+    if days:
+        return f"{days} 天 {hours} 小时"
+    if hours:
+        return f"{hours} 小时 {minutes} 分"
+    return f"{minutes} 分钟"
+
+
+def _boot_time() -> float:
+    """本次开机时刻。读不到就按「现在」算，宁可显示 0 分钟也别抛异常。"""
+    import time
+
+    try:
+        import psutil
+
+        return psutil.boot_time()
+    except Exception:
+        return time.time()
+
+
+def _os_short() -> str:
+    """系统简称，例如「Win11 24H2」。
+
+    概览的概况格子只有一百多像素宽，产品全名（Windows 11 家庭中文版）
+    在那儿会被省略号吃掉；换成「Win11 + 版本号」读起来信息密度更高。
+    """
+    import winreg
+
+    try:
+        path = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion"
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, path) as key:
+            product = str(winreg.QueryValueEx(key, "ProductName")[0])
+            build = str(winreg.QueryValueEx(key, "CurrentBuild")[0])
+            try:
+                display = str(winreg.QueryValueEx(key, "DisplayVersion")[0])
+            except OSError:
+                display = ""
+    except OSError:
+        return ""
+
+    # Win11 的 ProductName 里仍写着「Windows 10」，只能靠 build 号判断
+    if build.isdigit() and int(build) >= 22000:
+        family = "Win11"
+    elif "Windows 10" in product:
+        family = "Win10"
+    else:
+        family = product
+    return f"{family} {display}".strip()
 
 
 def _core_note(cpu) -> str:
@@ -196,9 +252,23 @@ class ActionStrip(Card):
 
 
 class OverviewPage(QWidget):
+    """总览：一屏说清「机器忙不忙、被谁占着、有什么要处理」。
+
+    版式三行：KPI 四连 → 趋势图 + 内存构成/系统概况 → 两张排行榜 → 待处理事项。
+
+    每核占用只在 CPU 段出现。之前两块都放了同一张 CoreTiles，等于把
+    「哪几个核在忙」看两遍，还挤掉了概览该有的内存构成；现在这块地盘
+    换成了内存构成和系统概况 —— 一个回答「内存被谁吃了」，一个回答
+    「这台机器开了多久、跑着什么版本」，和 CPU 段不重叠。
+    """
+
     def __init__(self, store=None, on_navigate=None, parent=None):
         super().__init__(parent)
         self.store = store
+        self._boot = _boot_time()
+        self._os = _os_short()
+        self._sys_rows: list[tuple] = []
+
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         # 分段栏吃掉了 41px，概览页的三段间距收一档才能在小窗口里放完
@@ -212,23 +282,73 @@ class OverviewPage(QWidget):
             _kpi_row([self.kpi_cpu, self.kpi_mem, self.kpi_disk, self.kpi_net])
         )
 
-        trend, _ = _card_title("CPU 趋势", "最近 3 分钟")
-        self.chart = TrendChart([("CPU", T.ACCENT)], capacity=180)
+        # 左：CPU + 内存画在同一张图上。总览要回答的是「整机忙不忙」，
+        # 两条线叠在一起，内存跟着 CPU 一起涨的那种卡顿才看得出来。
+        trend, self.lbl_trend = _card_title("系统趋势", "CPU 与内存 · 最近 3 分钟")
+        self.chart = TrendChart(
+            [("CPU", T.ACCENT), ("内存", T.PURPLE)], capacity=180
+        )
         trend.add(self.chart, 1)
 
-        cores, self.lbl_cores = _card_title("每核占用")
-        self.core_tiles = CoreTiles()
-        cores.add(self.core_tiles, 1)
-        root.addLayout(_two_col(trend, cores), 6)
+        # 右列：内存构成 + 系统概况。两块都是「一句话说清现状」的短卡片，
+        # 上下叠起来正好和左边趋势图一样高。
+        column = QWidget()
+        col = QVBoxLayout(column)
+        col.setContentsMargins(0, 0, 0, 0)
+        col.setSpacing(7)
 
-        mem_card, _ = _card_title("内存占用 Top")
+        mem_card, self.lbl_mem_total = _card_title("内存构成")
+        self.mem_bar = SegmentBar(height=9)
+        mem_card.add(self.mem_bar)
+
+        # 三段并排的小统计，而不是内存页那种「一行一条」的图例：
+        # 概览这一格只有三十来字的空间，竖排三条会撑出卡片；
+        # 横排三列也顺带和内存页的版式区分开，切过去不至于像看同一张卡。
+        stats = QHBoxLayout()
+        stats.setContentsMargins(0, 1, 0, 0)
+        stats.setSpacing(8)
+        self._mem_values: list[QLabel] = []
+        for title, color in (("使用中", T.RED), ("待命", T.AMBER), ("空闲", T.GREEN)):
+            cell = QVBoxLayout()
+            cell.setContentsMargins(0, 0, 0, 0)
+            cell.setSpacing(1)
+
+            name_row = QHBoxLayout()
+            name_row.setContentsMargins(0, 0, 0, 0)
+            name_row.setSpacing(5)
+            dot = QLabel()
+            dot.setFixedSize(6, 6)
+            dot.setStyleSheet(f"background: {color}; border-radius: 3px;")
+            name_row.addWidget(dot, 0, Qt.AlignVCenter)
+            name_row.addWidget(label(title, 10, T.TEXT_DIM))
+            name_row.addStretch(1)
+            cell.addLayout(name_row)
+
+            value = label("--", 13, T.TEXT, QFont.DemiBold)
+            cell.addWidget(value)
+            self._mem_values.append(value)
+
+            stats.addLayout(cell, 1)
+        mem_card.body().addLayout(stats)
+        mem_card.body().addStretch(1)
+
+        sys_card, _ = _card_title("系统概况")
+        self.sys_rank = RankList(rows=4, elide_width=100)
+        sys_card.add(self.sys_rank, 1)
+
+        col.addWidget(mem_card, 1)
+        col.addWidget(sys_card, 1)
+
+        root.addLayout(_two_col(trend, column), 6)
+
+        mem_top, _ = _card_title("内存占用 Top")
         self.mem_rank = RankList(rows=4, elide_width=130)
-        mem_card.add(self.mem_rank, 1)
+        mem_top.add(self.mem_rank, 1)
 
         part_card, self.lbl_parts = _card_title("磁盘分区")
         self.part_rank = RankList(rows=4, elide_width=110)
         part_card.add(self.part_rank, 1)
-        root.addLayout(_two_col(mem_card, part_card), 3)
+        root.addLayout(_two_col(mem_top, part_card), 3)
 
         self.actions = ActionStrip(on_navigate or (lambda _key: None))
         root.addWidget(self.actions)
@@ -280,28 +400,78 @@ class OverviewPage(QWidget):
     def update_metrics(self, snap: MetricsSnapshot) -> None:
         cpu = snap.cpu
         mem = snap.memory
-        # 核数在整屏里只说一次：概览放在这张卡的副标题，CPU 页放在「核心」卡
+        total = mem.total or 1
+
+        # CPU 副标题只说频率和峰值，不再写核数：核数归 CPU 段的「核心」卡，
+        # 这边再说一遍就是同一句话读两次
+        peak = max(cpu.per_core) if cpu.per_core else 0.0
         self.kpi_cpu.set_value(
             f"{cpu.total:.0f}",
-            f"{_core_text(cpu)} · {cpu.freq_mhz:.0f} MHz",
+            f"{_freq_text(cpu.freq_mhz)} · 峰值 {peak:.0f}%",
             T.load_color(cpu.total),
+            meter=cpu.total / 100,
+            meter_color=T.load_color(cpu.total),
         )
         self.kpi_mem.set_value(
-            f"{mem.percent:.0f}", f"可用 {fmt_bytes(mem.avail)}", T.load_color(mem.percent)
+            f"{mem.percent:.0f}",
+            f"可用 {fmt_bytes(mem.avail)}",
+            T.load_color(mem.percent),
+            meter=mem.percent / 100,
+            meter_color=T.load_color(mem.percent),
         )
         self.kpi_disk.set_value(
             f"{snap.disk.percent:.0f}",
             f"剩余 {fmt_bytes(snap.disk.free)}",
             T.load_color(snap.disk.percent),
+            meter=snap.disk.percent / 100,
+            meter_color=T.load_color(snap.disk.percent),
         )
         self.kpi_net.set_value(
             f"↓{fmt_speed(snap.network.down_bps).replace(' ', '')}",
             f"↑{fmt_speed(snap.network.up_bps)}",
         )
-        self.chart.push([cpu.total])
-        self.core_tiles.set_values(list(cpu.per_core))
-        self.lbl_cores.setText(_core_note(cpu))
+        self.chart.push([cpu.total, mem.percent])
+
+        self.lbl_mem_total.setText(f"共 {mem.total / winmem.GB:.1f} GB")
+        self.mem_bar.set_segments(
+            [
+                (mem.used / total, T.RED),
+                (mem.cache / total, T.AMBER),
+                (mem.free / total, T.GREEN),
+            ]
+        )
+        self._mem_values[0].setText(fmt_bytes(mem.used))
+        self._mem_values[1].setText(fmt_bytes(mem.cache))
+        self._mem_values[2].setText(fmt_bytes(mem.free))
+
+        self._fill_system(snap)
         self._fill_partitions(snap.disk.partitions)
+
+    def _fill_system(self, snap: MetricsSnapshot) -> None:
+        """系统概况：开机时长、进程/线程、本机 IP、系统版本。
+
+        这几项每秒只有开机时长在动（还是一分钟才变一次），所以整组文案
+        不变就不写控件 —— RankList.set_rows 每行都要 setText，白跑一遍没意义。
+        """
+        import time
+
+        ip = ""
+        for item in snap.network.interfaces:
+            if item.get("ip"):
+                ip = item["ip"]
+                break
+
+        mem = snap.memory
+        rows = [
+            ("开机时长", "", _uptime_text(time.time() - self._boot)),
+            ("进程 / 线程", "", f"{mem.process_count} / {mem.thread_count}"),
+            ("本机 IP", "", ip or "—"),
+            ("系统", "", self._os or "—"),
+        ]
+        if rows == self._sys_rows:
+            return
+        self._sys_rows = rows
+        self.sys_rank.set_rows(rows)
 
     def _fill_partitions(self, partitions) -> None:
         rows = []

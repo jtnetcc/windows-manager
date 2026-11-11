@@ -136,6 +136,15 @@ def main() -> int:
             assert monitor.current_segment() == key, f"分段切不过去：{key}"
             assert key in monitor._pages, f"分段没建出来：{key}"
         print(f"监控 6 个分段全部可建 ✓（建完 {rss():.1f} MB）")
+        # 每核占用只该有一份：总览和 CPU 段都放同一张 CoreTiles，
+        # 等于把「哪几个核在忙」看两遍，还挤掉了总览该有的内存构成
+        from ui.components import CoreTiles
+
+        assert not monitor._pages["overview"].findChildren(CoreTiles), (
+            "总览又出现了每核占用"
+        )
+        assert monitor._pages["cpu"].findChildren(CoreTiles), "CPU 段缺每核占用"
+        print("每核占用只在 CPU 段出现 ✓")
         if SHOT:
             win.grab().save(str(ROOT / "preview_start_process.png"))
         rebuild(win)

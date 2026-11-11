@@ -198,7 +198,7 @@ class Icon(QWidget):
 
 
 class KpiCard(QFrame):
-    """一个大数字 + 标题 + 副标题，标题前可带图标。"""
+    """一个大数字 + 标题 + 副标题，标题前可带图标，底部可带一条占用比例细线。"""
 
     def __init__(self, title: str, unit: str = "", icon: str = "", parent=None):
         super().__init__(parent)
@@ -209,6 +209,9 @@ class KpiCard(QFrame):
         )
         self._unit = unit
         self._color = T.TEXT
+        # 底部比例线：0~1，None 表示这个指标没有比例（比如网络速率）
+        self._meter: float | None = None
+        self._meter_color = T.ACCENT
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(14, 10, 14, 10)
@@ -229,7 +232,14 @@ class KpiCard(QFrame):
         layout.addWidget(self.lbl_value)
         layout.addWidget(self.lbl_sub)
 
-    def set_value(self, value: str, sub: str = "", color: str | None = None) -> None:
+    def set_value(
+        self,
+        value: str,
+        sub: str = "",
+        color: str | None = None,
+        meter: float | None = None,
+        meter_color: str | None = None,
+    ) -> None:
         self.lbl_value.setText(f"{value}{self._unit}")
         self.lbl_sub.setText(sub)
         # 每秒都在调这个函数，而 setStyleSheet 会触发一次样式重算 + 重绘。
@@ -239,6 +249,55 @@ class KpiCard(QFrame):
             self.lbl_value.setStyleSheet(
                 f"color: {color}; background: transparent; border: none;"
             )
+        # 底部比例线同理：只有跨过 1% 才重绘，避免每秒整张卡重画一次
+        target = None if meter is None else max(0.0, min(1.0, float(meter)))
+        tint = meter_color or T.ACCENT
+        if target is None:
+            if self._meter is not None:
+                self._meter = None
+                self.update()
+        else:
+            changed = self._meter is None or abs(target - self._meter) >= 0.01
+            if changed or tint != self._meter_color:
+                self._meter = target
+                self._meter_color = tint
+                self.update()
+
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+        if self._meter is None:
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        # 圆角裁剪：细线要贴着卡片下沿走，不能跳出边框
+        clip = QPainterPath()
+        clip.addRoundedRect(QRectF(self.rect()), 8, 8)
+        painter.setClipPath(clip)
+
+        bar = QRectF(14, self.height() - 7.0, self.width() - 28, 3.0)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(T.BORDER_SOFT))
+        painter.drawRoundedRect(bar, 1.5, 1.5)
+        filled = bar.width() * self._meter
+        if filled > 2.0:
+            painter.setBrush(QColor(self._meter_color))
+            painter.drawRoundedRect(QRectF(bar.x(), bar.y(), filled, 3.0), 1.5, 1.5)
+        painter.end()
+
+
+def _nice_ceiling(value: float) -> float:
+    """把纵轴上限抬到一个「好看」的刻度（1/1.5/2/2.5/3/4/5/6/8 × 10^n）。
+
+    自适应纵轴原来直接取峰值×1.18，于是刻度会写成 1523 KB/s 这种数字，
+    轴上一眼看不出量级。
+    """
+    if value <= 0:
+        return 1.0
+    base = 10 ** math.floor(math.log10(value))
+    for step in (1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10):
+        if value <= step * base:
+            return step * base
+    return 10 * base
 
 
 class TrendChart(QWidget):
@@ -347,13 +406,17 @@ class TrendChart(QWidget):
             return
 
         peak = max(all_values)
-        high = peak * 1.18 if peak > 4 else 10.0
         if self._unit == "%":
-            high = min(100.0, max(high, 10.0))
+            # 百分比按 10 的整数倍取上限：80/40/0 比 75/37/0 好读
+            high = min(100.0, max(10.0, math.ceil(peak * 1.15 / 10) * 10))
+        else:
+            high = _nice_ceiling(peak * 1.15) if peak > 4 else 10.0
         low = 0.0
         span = high - low or 1.0
 
-        left_pad, right_pad, top_pad, bottom_pad = 38, 6, 8, 6
+        # 多序列时左上角要放图例，给它单独留一条带子，别压在绘图区上
+        top_pad = 18 if len(self._series) > 1 else 8
+        left_pad, right_pad, bottom_pad = 38, 6, 6
         plot_w = rect.width() - left_pad - right_pad
         plot_h = rect.height() - top_pad - bottom_pad
 
@@ -397,9 +460,14 @@ class TrendChart(QWidget):
             # 渐变必须以「曲线最高点」为起点，从画布顶部起算的话，
             # 曲线靠上的时候整段填充都会落在透明区间里，等于没画。
             peak_y = min(py for _, py in points)
-            grad = QLinearGradient(0, peak_y, 0, peak_y + plot_h * 0.55)
+            # 多序列时把底色压得很淡：两条曲线各铺一大片会把图变成拼色块，
+            # 重点应该落在线上。单序列（CPU 页/内存页）保留原来的深度。
+            single = len(self._series) == 1
+            grad = QLinearGradient(
+                0, peak_y, 0, peak_y + plot_h * (0.55 if single else 0.34)
+            )
             top = QColor(color)
-            top.setAlpha(56)
+            top.setAlpha(56 if single else 22)
             clear = QColor(color)
             clear.setAlpha(0)
             grad.setColorAt(0.0, top)
