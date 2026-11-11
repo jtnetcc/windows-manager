@@ -235,17 +235,20 @@ def read_memory() -> MemSnapshot:
     if free + standby + modified == 0:
         free, standby, modified = avail, 0, 0
 
-    used = max(0, total - free - standby - modified)
+    # 「已用」只认 GlobalMemoryStatusEx 的 avail —— 这是系统给的权威口径，
+    # 和任务管理器的「已使用」完全一致。
+    #
+    # 之前用 total - free - standby - modified 自己算，问题是那三个值来自
+    # NtQuerySystemInformation，需要 SeProfileSingleProcessPrivilege：
+    # 特权没启用时内核可能返回「部分字段有效」的结果，standby 少算几个 GB，
+    # used 就虚高 —— 用户看到 80%，任务管理器却是 70%。
+    # 拿特权去凑一个本来就有现成答案的数字，纯属自找麻烦。
+    used = max(0, total - avail)
 
-    # 兜底：NtQuerySystemInformation 需要 SeProfileSingleProcessPrivilege，
-    # 拿不到权限时可能返回「部分字段有效」的结果，算出来的 used 会明显跑偏。
-    # 用 GlobalMemoryStatusEx 的 avail 交叉验证，差太多就以 API 为准 ——
-    # 宁可口径粗一点，也不能给用户一个和任务管理器对不上的数字。
-    if total:
-        api_used = max(0, total - avail)
-        if abs(used - api_used) > total * 0.12:
-            free, standby, modified = avail, 0, 0
-            used = api_used
+    # free / standby / modified 只用于界面上的细分展示，不参与占用率计算。
+    # 页列表读不到时退回「可用即空闲」，至少不会给出错的数字。
+    if free + standby + modified == 0:
+        free = avail
 
     if has_perf:
         commit_used = int(perf.CommitTotal * page_size)
