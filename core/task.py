@@ -54,6 +54,9 @@ class TaskCenter(QObject):
     finished = Signal(str, object)      # task_id, 结果
     cancelled = Signal(str)             # task_id
     failed = Signal(str, str, str)      # task_id, 描述, 错误信息
+    # 局部结果：长任务传回「已经做完的那一块」，界面边扫边显示。
+    # 目前只有磁盘空间分析用 —— 那一步要几十秒，等到最后才出结果太干。
+    partial = Signal(str, object)       # task_id, 局部结果
     queue_changed = Signal()
 
     def __init__(self, parent=None):

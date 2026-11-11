@@ -113,6 +113,7 @@ def main() -> int:
     def step(i: int = 0) -> None:
         keys = [key for key, _title in NAV_ITEMS]
         if i >= len(keys):
+            print(f"全部 {len(keys)} 项导航都能切，已建 {len(window._pages)} 页")
             segments(window)
             return
         key = keys[i]
@@ -126,6 +127,21 @@ def main() -> int:
         QTimer.singleShot(60, lambda: step(i + 1))
 
     def segments(win) -> None:
+        # 磁盘空间：两个分段都要能切，且大文件段默认扫整个系统盘 ——
+        # 单分区机器上「用户目录」只覆盖 C://Users//xxx，等于什么都没扫到
+        from core import bigfile as bf
+
+        win.switch_page("bigfile")
+        space_page = win._pages["bigfile"]
+        for key in ("analysis", "files"):
+            space_page.set_segment(key)
+            app.processEvents()
+            assert space_page.current_segment() == key, f"分段切不过去：{key}"
+        assert space_page.files._roots == bf.preset_roots("system"), "大文件默认范围不是系统盘"
+        assert bf.PRESETS[0][0] == "system", "「系统盘」不在范围列表第一位"
+        print("磁盘空间两个分段可切 · 大文件默认系统盘 ✓")
+        win.tasks.cancel_many("space", "space_sub")
+
         win.switch_page("monitor")
         app.processEvents()
         monitor = win._pages["monitor"]
@@ -167,7 +183,7 @@ def main() -> int:
         if report["err"]:
             print("失败页：", report["err"])
         assert not report["err"], "有页面切不过去"
-        print(f"全部页面切换完成 {rss():.1f} MB，共 {len(window._pages)} 页已建")
+        print(f"换肤后重新建页完成 {rss():.1f} MB")
         window._shutdown()
         app.quit()
 

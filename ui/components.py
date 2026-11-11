@@ -101,6 +101,32 @@ def reveal_file(path: str) -> None:
         pass
 
 
+def open_folder(path: str) -> bool:
+    """打开一个目录（不选中任何文件）。返回 False 让调用方能提示「打不开」。"""
+    if not path or not os.path.isdir(path):
+        return False
+    try:
+        os.startfile(path)
+        return True
+    except OSError:
+        return False
+
+
+def run_system(*args: str) -> bool:
+    """拉起系统自带的设置界面。
+
+    磁盘空间页有几个动作只能交给 Windows 自己做（保护点配额、索引重建、
+    页面文件大小），硬做要改注册表或者调 WMI，风险远大于收益。
+    """
+    import subprocess
+
+    try:
+        subprocess.Popen(list(args), shell=False)
+        return True
+    except OSError:
+        return False
+
+
 def make_table(
     headers: list[str],
     *,

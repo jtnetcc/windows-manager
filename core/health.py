@@ -61,6 +61,9 @@ class HealthSnapshot:
     update_backlog: int = 0
     releasable: int = 0
     memory_percent: float = 0.0
+    # 1 表示「一块盘一个分区」的整机/笔记本常见出厂布局。
+    # 这种机器没有「把文件挪到 D 盘」这条路，建议要换个说法。
+    partition_count: int = 0
     # 哪些因子已经有真实数据了
     has_junk: bool = False
     has_dup: bool = False
@@ -153,7 +156,8 @@ def compute(snapshot: HealthSnapshot) -> HealthReport:
             "系统盘剩余空间",
             28,
             free_score,
-            f"剩余 {free_gb:.1f} GB · {percent:.0f}%",
+            f"剩余 {free_gb:.1f} GB · {percent:.0f}%"
+            + ("（仅 1 个分区）" if snapshot.partition_count == 1 else ""),
             measured=snapshot.system_total > 0,
         )
     )
@@ -360,10 +364,17 @@ def build_advice(snapshot: HealthSnapshot, factors: list[Factor]) -> list[Advice
         out.append(Advice(text, FACTOR_PAGE.get(key, "")))
 
     if low("free"):
-        add(
-            "free",
-            f"系统盘只剩 {_size(snapshot.system_free)}，建议清理大文件或把缓存目录迁到其他盘。",
-        )
+        if snapshot.partition_count == 1:
+            add(
+                "free",
+                f"系统盘只剩 {_size(snapshot.system_free)}，本机只有一个分区，"
+                "没有第二个盘可以迁 —— 到「磁盘空间」看看哪些能回收。",
+            )
+        else:
+            add(
+                "free",
+                f"系统盘只剩 {_size(snapshot.system_free)}，建议清理大文件或把缓存目录迁到其他盘。",
+            )
     if low("junk"):
         add("junk", f"垃圾文件约 {_size(snapshot.junk_bytes)}，建议执行一次垃圾清理。")
     if low("dup"):
@@ -531,6 +542,13 @@ def probe_system(should_stop=lambda: False) -> HealthSnapshot | None:
         snapshot.memory_percent = psutil.virtual_memory().percent
     except Exception:
         pass
+
+    try:
+        snapshot.partition_count = len(
+            [p for p in psutil.disk_partitions(all=False) if p.fstype]
+        )
+    except Exception:
+        snapshot.partition_count = 0
 
     return snapshot
 

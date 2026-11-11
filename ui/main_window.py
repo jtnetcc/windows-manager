@@ -86,7 +86,7 @@ NAV_GROUPS = [
             ("clean", "垃圾清理", "clean"),
             ("appclean", "软件专清", "appclean"),
             ("dup", "重复文件", "duplicate"),
-            ("bigfile", "超大文件", "file"),
+            ("bigfile", "磁盘空间", "folder"),
             ("recycle", "回收中心", "recycle"),
         ],
     ),
@@ -158,7 +158,7 @@ PAGE_SUBS = {
     "appclean": "按软件清理缓存与已接收的图片视频",
     "slim": "关掉不需要的系统功能，收回能安全释放的空间",
     "dup": "按内容哈希找出重复副本",
-    "bigfile": "按类型扫视频、安装包等大文件，勾选后送进回收站",
+    "bigfile": "系统盘空间去哪了，以及哪些能回收",
     "recycle": "回收站内容一览，按体积排序，可还原或清空",
     "startup": "开机自启的注册表项、快捷方式与计划任务",
     "tasks": "任务计划程序里的第三方任务，可启用或禁用",
@@ -296,6 +296,7 @@ class MainWindow(QMainWindow):
         # 监控页停在哪一段。页面按需创建，换肤又会整页重建，
         # 记在这里才能在下次建出来时回到原来的分段。
         self._monitor_segment = "overview"
+        self._space_segment = "analysis"
 
         self.setWindowTitle(f"Windows系统管家 {version.text()}")
         self.resize(1100, 720)
@@ -670,9 +671,13 @@ class MainWindow(QMainWindow):
             return DupPage(self.store, self.tasks)
 
         if key == "bigfile":
-            from .page_bigfile import BigFilePage
+            from .page_space import SpacePage
 
-            return BigFilePage(self.store, self.tasks)
+            page = SpacePage(self.store, self.tasks, self.switch_page)
+            page.segment_changed.connect(self._on_segment_changed)
+            if self._space_segment != "analysis":
+                page.set_segment(self._space_segment)
+            return page
 
         if key == "recycle":
             from .page_recycle import RecyclePage
@@ -777,13 +782,19 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, page, getattr(page, starter))
 
     def _on_segment_changed(self, key: str, subtitle: str) -> None:
-        """监控页内部分段切换：只换副标题，侧栏选中和标题都不动。
+        """页内分段切换：只换副标题，侧栏选中和标题都不动。
 
         切到别的页面时分段器还在后台发信号（比如程序里同步状态），
         所以要再确认一次当前页，避免把别的页副标题改掉。
+        两个带分段的页面各记各的 —— 以前只有监控页，`_monitor_segment`
+        照单全收；磁盘空间页接进来之后，它会把 `analysis` 写进监控页的
+        记忆里，换肤重建时监控页就回不到原来那一段了。
         """
-        self._monitor_segment = key
         if self._current_page == "monitor":
+            self._monitor_segment = key
+            self.lbl_sub.setText(subtitle)
+        elif self._current_page == "bigfile":
+            self._space_segment = key
             self.lbl_sub.setText(subtitle)
 
     # ---------------------------------------------------------- 体检数据

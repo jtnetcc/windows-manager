@@ -59,6 +59,19 @@ class BigFileState:
 
 
 @dataclass
+class SpaceState:
+    """磁盘空间分析结果。换肤重建页面时靠它把结果还原回来，
+    不然切个主题整页就空了，用户得再扫两分钟。"""
+
+    result: object = None
+    scanned_at: float = 0.0
+
+    @property
+    def ready(self) -> bool:
+        return self.result is not None and self.scanned_at > 0
+
+
+@dataclass
 class StartupState:
     entries: list = field(default_factory=list)
     scanned_at: float = 0.0
@@ -101,6 +114,7 @@ class Store(QObject):
     startup_changed = Signal()
     software_changed = Signal()
     registry_changed = Signal()
+    space_changed = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -110,6 +124,7 @@ class Store(QObject):
         self.startup = StartupState()
         self.software = SoftwareState()
         self.registry = RegistryState()
+        self.space = SpaceState()
 
     # ---------------------------------------------------------- 写入
 
@@ -140,6 +155,9 @@ class Store(QObject):
         elif task_id == "registry":
             self.registry = result
             self.registry_changed.emit()
+        elif task_id == "space":
+            self.space = SpaceState(result=result, scanned_at=result.scanned_at)
+            self.space_changed.emit()
         else:
             return False
         return True
