@@ -237,6 +237,16 @@ def read_memory() -> MemSnapshot:
 
     used = max(0, total - free - standby - modified)
 
+    # 兜底：NtQuerySystemInformation 需要 SeProfileSingleProcessPrivilege，
+    # 拿不到权限时可能返回「部分字段有效」的结果，算出来的 used 会明显跑偏。
+    # 用 GlobalMemoryStatusEx 的 avail 交叉验证，差太多就以 API 为准 ——
+    # 宁可口径粗一点，也不能给用户一个和任务管理器对不上的数字。
+    if total:
+        api_used = max(0, total - avail)
+        if abs(used - api_used) > total * 0.12:
+            free, standby, modified = avail, 0, 0
+            used = api_used
+
     if has_perf:
         commit_used = int(perf.CommitTotal * page_size)
         proc_count = int(perf.ProcessCount)
