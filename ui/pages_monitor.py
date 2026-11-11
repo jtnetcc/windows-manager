@@ -26,7 +26,7 @@ from core.metrics import MetricsSnapshot, fmt_bytes, fmt_speed
 from . import theme_dark as T
 from .components import (
     Card,
-    CoreBars,
+    CoreTiles,
     Dot,
     KpiCard,
     RankList,
@@ -96,6 +96,25 @@ def _card_title(text: str, note: str = "") -> tuple[Card, QWidget]:
     head.addWidget(note_label)
     card.body().addLayout(head)
     return card, note_label
+
+
+def _core_text(cpu) -> str:
+    """核数文案：有超线程才写两个数字，否则「4 核 4 线程」读着别扭。"""
+    if cpu.physical and cpu.physical != cpu.logical:
+        return f"{cpu.physical} 核 {cpu.logical} 线程"
+    return f"{cpu.logical} 核"
+
+
+def _core_note(cpu) -> str:
+    """每核卡片右上角的补充说明。
+
+    这里原来写「4 物理 / 4 逻辑」，和同一屏 KPI 卡上的核数重复了一遍；
+    改成统计量 —— 它回答的是「这几个核现在忙不忙」，核数交给 KPI 说。
+    """
+    values = cpu.per_core
+    if not values:
+        return ""
+    return f"平均 {sum(values) / len(values):.0f}% · 峰值 {max(values):.0f}%"
 
 
 def _top_by_name(rows: list[dict], value_key: str, limit: int = 6) -> list[tuple]:
@@ -198,8 +217,8 @@ class OverviewPage(QWidget):
         trend.add(self.chart, 1)
 
         cores, self.lbl_cores = _card_title("每核占用")
-        self.core_bars = CoreBars()
-        cores.add(self.core_bars, 1)
+        self.core_tiles = CoreTiles()
+        cores.add(self.core_tiles, 1)
         root.addLayout(_two_col(trend, cores), 6)
 
         mem_card, _ = _card_title("内存占用 Top")
@@ -261,9 +280,10 @@ class OverviewPage(QWidget):
     def update_metrics(self, snap: MetricsSnapshot) -> None:
         cpu = snap.cpu
         mem = snap.memory
+        # 核数在整屏里只说一次：概览放在这张卡的副标题，CPU 页放在「核心」卡
         self.kpi_cpu.set_value(
             f"{cpu.total:.0f}",
-            f"{cpu.logical} 线程 · {cpu.freq_mhz:.0f} MHz",
+            f"{_core_text(cpu)} · {cpu.freq_mhz:.0f} MHz",
             T.load_color(cpu.total),
         )
         self.kpi_mem.set_value(
@@ -279,8 +299,8 @@ class OverviewPage(QWidget):
             f"↑{fmt_speed(snap.network.up_bps)}",
         )
         self.chart.push([cpu.total])
-        self.core_bars.set_values(list(cpu.per_core))
-        self.lbl_cores.setText(f"{cpu.physical} 物理 / {cpu.logical} 逻辑")
+        self.core_tiles.set_values(list(cpu.per_core))
+        self.lbl_cores.setText(_core_note(cpu))
         self._fill_partitions(snap.disk.partitions)
 
     def _fill_partitions(self, partitions) -> None:
@@ -335,8 +355,8 @@ class CpuPage(QWidget):
         trend.add(self.chart, 1)
 
         cores, self.lbl_cores = _card_title("每核占用")
-        self.core_bars = CoreBars()
-        cores.add(self.core_bars, 1)
+        self.core_tiles = CoreTiles()
+        cores.add(self.core_tiles, 1)
         root.addLayout(_two_col(trend, cores), 6)
 
         top_card, self.lbl_top_cpu = _card_title("CPU 占用 Top")
@@ -349,14 +369,18 @@ class CpuPage(QWidget):
         self.kpi_total.set_value(f"{cpu.total:.0f}", "实时", T.load_color(cpu.total))
         base = cpu.model.split("@")[-1].strip() if "@" in cpu.model else "—"
         self.kpi_freq.set_value(f"{cpu.freq_mhz:.0f}", f"基准 {base}")
-        self.kpi_cores.set_value(f"{cpu.logical}", f"{cpu.physical} 物理核")
+        # 主数值已经写了逻辑处理器数，副标题只在真有超线程时才补物理核
+        self.kpi_cores.set_value(
+            f"{cpu.logical}",
+            f"{cpu.physical} 物理核" if cpu.physical != cpu.logical else "无超线程",
+        )
         self.kpi_load.set_value(
             f"{cpu.load_avg[0]:.2f}", f"5 分钟 {cpu.load_avg[1]:.2f}"
         )
         self.chart.push([cpu.total])
-        self.core_bars.set_values(list(cpu.per_core))
+        self.core_tiles.set_values(list(cpu.per_core))
         self.lbl_model.setText(cpu.model)
-        self.lbl_cores.setText(f"{cpu.physical} 物理 / {cpu.logical} 逻辑")
+        self.lbl_cores.setText(_core_note(cpu))
 
     def update_processes(self, rows: list[dict], total: int, leaks: set[int]) -> None:
         items = []

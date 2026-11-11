@@ -50,14 +50,17 @@ def main() -> None:
         original = appclean._specs
         appclean._specs = lambda: [spec]
         try:
-            apps = appclean.discover()
+            # discover() 还会自动识别本机真实存在的软件（比如 OneDrive），
+            # 断言「只有一条」会随机器状态飘；只认注入的这条测试数据
+            apps = [a for a in appclean.discover() if a.key == "test"]
             assert len(apps) == 1, apps
             app = apps[0]
             names = [t.name for t in app.targets]
             print("发现目录:", names)
             assert names == ["图片", "视频"], names
 
-            stats = appclean.scan()
+            stats = [s for s in appclean.scan() if s.app.key == "test"]
+            assert stats, "没扫到注入的测试软件"
             stat = stats[0]
             print(f"统计: {stat.size} B · {stat.count} 个文件 · {stat.kinds} 类")
             assert stat.size == 1200 + 3400 + 9000, stat.size

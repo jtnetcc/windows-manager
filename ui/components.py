@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import subprocess
 from collections import deque
@@ -443,13 +444,21 @@ class TrendChart(QWidget):
         painter.end()
 
 
-class CoreBars(QWidget):
-    """每核占用柱状图：底部轨道 + 彩色柱。"""
+class CoreTiles(QWidget):
+    """每核占用：一个核心一块方砖，底色深浅与底部比例线表示负载。
 
-    def __init__(self, parent=None):
+    原来是竖柱。四核机器上四根柱子被拉到跟卡片一样高，一大片全是空轨道，
+    反而看不出谁在忙；方砖在小核数时不空旷，核多时按 8 列折行，32 线程也
+    能一屏放下。读数（精确百分比）交给 CPU 页的「CPU 占用 Top」，
+    砖块只承担「一眼看出哪几核在忙」。
+    """
+
+    def __init__(self, compact: bool = False, parent=None):
         super().__init__(parent)
+        self._compact = compact
         self._values: list[float] = []
-        self.setMinimumHeight(58)
+        # 概览页只给一行的高度；CPU 页给足，砖块最长到 76
+        self.setMinimumHeight(34 if compact else 96)
 
     def set_values(self, values: list[float]) -> None:
         self._values = list(values)
@@ -458,7 +467,6 @@ class CoreBars(QWidget):
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing, True)
-        rect = QRectF(self.rect())
         values = self._values
 
         if not values:
@@ -466,30 +474,99 @@ class CoreBars(QWidget):
             return
 
         count = len(values)
-        gap = 6 if count <= 8 else 3
-        bar_w = (rect.width() - gap * (count - 1)) / count
-        bar_w = max(3.0, min(42.0, bar_w))
-        total_w = bar_w * count + gap * (count - 1)
-        x0 = (rect.width() - total_w) / 2
+        gap = 4 if self._compact else 6
+        if self._compact:
+            # 概览页只有一行高度：横着排满，方块封顶 26
+            cols = max(1, min(count, 8))
+            rows = math.ceil(count / cols)
+            cap = 26.0
+            tile_w = min((self.width() - gap * (cols - 1)) / cols, cap)
+            tile_h = min((self.height() - gap * (rows - 1)) / rows, cap)
+        else:
+            # CPU 页的卡片很高，固定一排会让方块缩在中间、上下全空。
+            # 这里按「格子尽量接近正方形」挑列数：4 核排 2×2、8 核 3×3、
+            # 16 核 4×4，砖块自然把卡片填满。
+            cols, tile_w, tile_h = 1, 0.0, 0.0
+            best = None
+            for candidate in range(1, min(count, 8) + 1):
+                r = math.ceil(count / candidate)
+                w = (self.width() - gap * (candidate - 1)) / candidate
+                h = (self.height() - gap * (r - 1)) / r
+                ratio = max(w / h, h / w) if h > 0 else 99
+                # 越方越好，但别留下空格子：4 核排成 3 列会在右下角空一块，
+                # 看着像少画了一个核，宁可稍微扁一点也排成 2×2
+                empty = candidate * r - count
+                score = (round(ratio + empty * 0.45, 2), -w * h)
+                if best is None or score < best:
+                    best, cols, tile_w, tile_h = score, candidate, w, h
+            # 太瘦的柱子又会变成原来那种「高而空」，压一下宽高比
+            if tile_h > tile_w * 1.8:
+                tile_h = tile_w * 1.8
+            rows = math.ceil(count / cols)
 
-        # 轨道铺满可用高度；卡片变矮时自然收缩，不会出现柱子悬在半空
-        bottom = rect.height() - 4
-        track_h = max(24.0, bottom - 6)
-        top = bottom - track_h
+        total_w = tile_w * cols + gap * (cols - 1)
+        total_h = tile_h * rows + gap * (rows - 1)
+        x0 = (self.width() - total_w) / 2
+        y0 = (self.height() - total_h) / 2
+        radius = max(4.0, min(9.0, min(tile_w, tile_h) * 0.14))
 
-        for i, value in enumerate(values):
-            x = x0 + i * (bar_w + gap)
+        for index, value in enumerate(values):
+            row, col = divmod(index, cols)
+            rect = QRectF(
+                x0 + col * (tile_w + gap), y0 + row * (tile_h + gap), tile_w, tile_h
+            )
             painter.setPen(Qt.NoPen)
-            # 轨道要够淡：太明显的话四个空槽会抢走注意力
             painter.setBrush(QColor(T.PANEL_ALT if T.is_dark() else T.PANEL_SUNKEN))
-            painter.drawRoundedRect(QRectF(x, top, bar_w, track_h), 2.5, 2.5)
+            painter.drawRoundedRect(rect, radius, radius)
 
-            height = track_h * max(0.0, min(100.0, value)) / 100.0
-            if height > 1:
-                color = QColor(T.load_color(value))
-                painter.setBrush(color)
+            # 底色承担「一眼看高低」，透明度跟着负载走；画满会盖住数字
+            load = max(0.0, min(100.0, value))
+            heat = QColor(T.load_color(value))
+            # 开方而不是线性：日常负载都在 10~30%，线性映射下四块颜色几乎一样，
+            # 看不出谁更忙。开方把低负载段的差异拉开，上限仍压在 145 保文字对比度
+            heat.setAlpha(int(28 + 118 * math.sqrt(load / 100)))
+            painter.setBrush(heat)
+            painter.drawRoundedRect(rect, radius, radius)
+
+            # 小砖块没有文字，底部这条比例线就是唯一的读数
+            if self._compact and load > 0.5:
+                bar_h = max(2.0, min(tile_h, tile_w) * 0.07)
+                painter.setBrush(QColor(T.load_color(value)))
                 painter.drawRoundedRect(
-                    QRectF(x, bottom - height, bar_w, height), 2.5, 2.5
+                    QRectF(
+                        rect.left() + radius * 0.5,
+                        rect.bottom() - bar_h - radius * 0.5,
+                        (tile_w - radius) * load / 100,
+                        bar_h,
+                    ),
+                    bar_h / 2,
+                    bar_h / 2,
+                )
+
+            short = min(tile_w, tile_h)
+            if self._compact or short < 24:
+                pass
+            elif short >= 54:
+                # 砖块够大时写全信息：左上「核 N」、中间百分比，等于一张小卡片
+                painter.setPen(QColor(T.TEXT_DIM))
+                painter.setFont(font(9))
+                painter.drawText(
+                    rect.adjusted(7, 5, -7, 0),
+                    Qt.AlignLeft | Qt.AlignTop,
+                    f"核 {index}",
+                )
+                painter.setPen(QColor(T.TEXT))
+                painter.setFont(font(18, QFont.DemiBold))
+                painter.drawText(
+                    rect.adjusted(0, 0, 0, -radius * 0.5),
+                    Qt.AlignCenter,
+                    f"{load:.0f}%",
+                )
+            else:
+                painter.setPen(QColor(T.TEXT))
+                painter.setFont(font(11 if short >= 36 else 10, QFont.DemiBold))
+                painter.drawText(
+                    rect.adjusted(0, 0, 0, -radius * 0.6), Qt.AlignCenter, str(index)
                 )
         painter.end()
 
