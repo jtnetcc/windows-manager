@@ -262,6 +262,86 @@ class PowerModeDialog(QDialog):
         ]
 
 
+def apply_titlebar_theme(widget: QWidget) -> None:
+    """标题栏跟随明暗：深色主题用 20/19 号属性，浅色主题显式设 0。
+
+    对话框也要调：它们不是 QMainWindow，系统默认给白标题栏。
+    """
+    try:
+        hwnd = int(widget.winId())
+        dwm = ctypes.WinDLL("dwmapi", use_last_error=True)
+        value = ctypes.c_int(1 if T.is_dark() else 0)
+        for attr in (20, 19):
+            if dwm.DwmSetWindowAttribute(
+                wintypes.HWND(hwnd),
+                ctypes.c_int(attr),
+                ctypes.byref(value),
+                ctypes.sizeof(value),
+            ) == 0:
+                break
+    except Exception:
+        pass
+
+
+class CloseChoiceDialog(QDialog):
+    """点关闭按钮时问一句：留后台还是退出。
+
+    「点叉等于关不掉」是最容易被当成程序卡死的设计，所以默认每次都问，
+    勾上「记住」之后才退化成两态（写进 settings.close_action）。
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.choice: str | None = None
+        self.remember = False
+        self.setWindowTitle("关闭窗口")
+        self.setModal(True)
+        self.setFixedWidth(430)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(20, 18, 20, 16)
+        root.setSpacing(10)
+
+        root.addWidget(label("关闭窗口", 15, T.TEXT, QFont.Medium))
+        text = label(
+            "留在右下角托盘可以继续监控，退出则不再接收告警。", 10, T.TEXT_DIM
+        )
+        text.setWordWrap(True)
+        root.addWidget(text)
+        root.addSpacing(2)
+
+        self.chk_remember = QCheckBox("记住我的选择，下次不再询问")
+        root.addWidget(self.chk_remember)
+        root.addSpacing(2)
+
+        buttons = QHBoxLayout()
+        buttons.setSpacing(8)
+        buttons.addStretch(1)
+        btn_cancel = QPushButton("取消")
+        btn_cancel.clicked.connect(self.reject)
+        # 缩到托盘是安全的一侧，做成主按钮、也吃掉回车
+        self.btn_tray = QPushButton("最小化到托盘")
+        self.btn_tray.setObjectName("Primary")
+        self.btn_tray.setDefault(True)
+        self.btn_tray.clicked.connect(lambda: self._pick(config.TRAY))
+        # 退出放最右：挨着标题栏的叉，破坏性动作不往中间放
+        btn_quit = QPushButton("退出程序")
+        btn_quit.clicked.connect(lambda: self._pick(config.QUIT))
+        buttons.addWidget(btn_cancel)
+        buttons.addWidget(self.btn_tray)
+        buttons.addWidget(btn_quit)
+        root.addLayout(buttons)
+
+    def _pick(self, action: str) -> None:
+        self.choice = action
+        self.remember = self.chk_remember.isChecked()
+        self.accept()
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        apply_titlebar_theme(self)
+
+
 class MainWindow(QMainWindow):
     def __init__(self, settings: config.Settings):
         super().__init__()
@@ -1511,37 +1591,52 @@ class MainWindow(QMainWindow):
             self._apply_titlebar()
 
     def _apply_titlebar(self) -> None:
-        """标题栏跟随明暗：深色主题用 20/19 号属性，浅色主题显式设 0。"""
-        try:
-            hwnd = int(self.winId())
-            dwm = ctypes.WinDLL("dwmapi", use_last_error=True)
-            value = ctypes.c_int(1 if T.is_dark() else 0)
-            for attr in (20, 19):
-                if dwm.DwmSetWindowAttribute(
-                    wintypes.HWND(hwnd),
-                    ctypes.c_int(attr),
-                    ctypes.byref(value),
-                    ctypes.sizeof(value),
-                ) == 0:
-                    break
-        except Exception:
-            pass
+        apply_titlebar_theme(self)
 
     def closeEvent(self, event) -> None:
-        if self.settings.minimize_to_tray and self.tray.isVisible():
-            event.ignore()
-            self.hide()
-            if not self._tray_hint_shown:
-                self._tray_hint_shown = True
-                self.tray.showMessage(
-                    "Windows系统管家",
-                    "已最小化到托盘，双击图标可重新打开",
-                    self.tray.MessageIcon.Information,
-                    2500,
-                )
+        # 托盘被系统关掉（通知区域里禁用了图标）时没有「留后台」这个选项
+        if not self.tray.isVisible():
+            self._quit_now()
+            event.accept()
             return
-        self._shutdown()
-        event.accept()
+
+        action = self.settings.close_action
+        if action == config.ASK:
+            event.ignore()
+            dialog = CloseChoiceDialog(self)
+            if dialog.exec() != QDialog.Accepted or dialog.choice is None:
+                return
+            action = dialog.choice
+            if dialog.remember:
+                self._remember_close_action(action)
+        else:
+            event.ignore()
+
+        if action == config.TRAY:
+            self.hide()
+            self._hint_to_tray()
+        else:
+            self._quit_now()
+
+    def _hint_to_tray(self) -> None:
+        """第一次藏到托盘时提示一句，之后就闭嘴。"""
+        if self._tray_hint_shown:
+            return
+        self._tray_hint_shown = True
+        self.tray.showMessage(
+            "Windows系统管家",
+            "已最小化到托盘，双击图标可重新打开。要彻底退出请右键托盘图标。",
+            self.tray.MessageIcon.Information,
+            3000,
+        )
+
+    def _remember_close_action(self, action: str) -> None:
+        self.settings.close_action = action
+        self.settings.save()
+        # 设置页没建也无所谓：它构造时会把值读一遍
+        page = self._pages.get("settings")
+        if page is not None:
+            page.set_close_action(action)
 
     def _stop_page_workers(self) -> None:
         """页面重建 / 退出前，先让扫描线程停下来。
@@ -1579,5 +1674,14 @@ class MainWindow(QMainWindow):
         self.tray.hide()
 
     def quit_app(self) -> None:
+        self._quit_now()
+
+    def _quit_now(self) -> None:
+        """真的退出：收尾 + 叫停事件循环。
+
+        main.py 里 setQuitOnLastWindowClosed(False) 是给「关到托盘」那条路留的，
+        所以窗口全关之后循环还在跑。不在这里显式 quit，退出就会变成一个
+        没有窗口、没有托盘的僵尸进程 —— 只能去任务管理器杀。
+        """
         self._shutdown()
         QApplication.quit()

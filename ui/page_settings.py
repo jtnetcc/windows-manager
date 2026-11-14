@@ -319,11 +319,23 @@ class SettingsPage(QWidget):
             _row("开机自启", "以普通权限静默启动到托盘", self.chk_startup)
         )
 
-        self.chk_tray = ToggleSwitch()
-        self.chk_tray.set_checked_silently(settings.minimize_to_tray)
-        self.chk_tray.toggled.connect(self._on_tray)
+        # 点关闭按钮的三态。默认「每次询问」——旧版本是直接缩托盘，
+        # 用户点叉没反应，第一反应是软件卡死了。
+        self.combo_close = ComboBox()
+        for key, name in (
+            (config.ASK, "每次询问"),
+            (config.TRAY, "最小化到托盘"),
+            (config.QUIT, "直接退出"),
+        ):
+            self.combo_close.addItem(name, key)
+        self.combo_close.setFixedWidth(144)
+        index = self.combo_close.findData(settings.close_action)
+        if index >= 0:
+            self.combo_close.setCurrentIndex(index)
+        self.combo_close.currentIndexChanged.connect(self._on_close_action)
         behavior.body().addWidget(
-            _row("最小化到托盘", "不退出程序，保留后台监控", self.chk_tray)
+            _row("关闭窗口时", "缩到托盘可保留后台监控，直接退出则不再告警",
+                 self.combo_close)
         )
         root.addWidget(behavior)
 
@@ -434,9 +446,20 @@ class SettingsPage(QWidget):
         self.settings.autostart = checked
         self._save()
 
-    def _on_tray(self, checked: bool) -> None:
-        self.settings.minimize_to_tray = checked
-        self._save()
+    def _on_close_action(self, index: int) -> None:
+        action = self.combo_close.itemData(index)
+        if action in config.CLOSE_ACTIONS:
+            self.settings.close_action = action
+            self._save()
+
+    def set_close_action(self, action: str) -> None:
+        """主窗口在关闭对话框里勾了「记住」，这里跟着走。"""
+        index = self.combo_close.findData(action)
+        if index < 0 or index == self.combo_close.currentIndex():
+            return
+        self.combo_close.blockSignals(True)
+        self.combo_close.setCurrentIndex(index)
+        self.combo_close.blockSignals(False)
 
     # -- 告警 ------------------------------------------------------
 

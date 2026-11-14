@@ -370,6 +370,11 @@ def app_stylesheet() -> str:
     QMainWindow, #Root, #PageArea {{
         background: {BG};
     }}
+    /* 对话框不在 QMainWindow 体系里，不写这条就是系统默认的白底 ——
+       深色主题下白底配深色按钮，像贴错了一张图 */
+    QDialog {{
+        background: {BG};
+    }}
     QScrollArea {{ background: transparent; border: none; }}
     QScrollArea > QWidget > QWidget {{ background: transparent; }}
 
