@@ -14,6 +14,8 @@ Token 需要 `repo` 权限。脚本不会把 token 写进任何文件。
 
 注意：
 - 只推送 `git ls-files` 列出的文件（受 .gitignore 约束）
+- 内容取自**暂存区**（`git cat-file blob :path`），不是磁盘：改完先 `git add` 再推，
+  否则推上去的是上一次暂存的样子
 - 默认建全新树，本地删掉的文件会一起从远端删掉；要保留用 `--keep-stale`
 - 中文路径要关掉 `core.quotepath`，否则会变成 `\350\260\203` 这种转义
 - 空仓库要先有一次提交，blob API 在空仓库上返回 409
