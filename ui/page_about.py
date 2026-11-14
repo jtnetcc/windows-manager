@@ -27,11 +27,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core import applog, config, version
+from core import applog, config, updater, version
 
 from . import appicon, theme_dark as T
 from .components import Card, copy_text, font, label, open_url
-from core import applog
 
 APP_NAME = "Windows系统管家"
 TAGLINE = (
@@ -56,14 +55,21 @@ class Channel(NamedTuple):
     note: str
 
 
-# 分发渠道。url 留空就显示「待接入」、按钮自动禁用 —— 后期上 OSS 只需要把
-# 这里的 url 填上，或在列表里再加一行，页面代码不用动。
+# 分发渠道。url 留空就显示「待接入」、按钮自动禁用 —— 再加一行就行，
+# 页面代码不用动。
 # 地址写在这里而不是从配置读：它是软件属性，用户改不了，也不该改。
+# OSS 那条直接问 updater 要：下载地址和检查更新指向同一个对象，
+# 两边各写一份迟早会有一边忘了改。
 CHANNELS = [
     Channel(
         "GitHub",
         "https://github.com/jtnetcc/windows-manager",
         "源码、版本说明与 zip 包都发布在这里",
+    ),
+    Channel(
+        "OSS 直链",
+        updater.download_url(),
+        "免登录直接下载最新版，国内速度比 GitHub 快",
     ),
 ]
 
@@ -128,6 +134,32 @@ def _elide(text: str, width: int) -> str:
 
     metrics = QFontMetrics(font(12))
     return metrics.elidedText(text, Qt.ElideMiddle, width)
+
+
+def _short_address(url: str, width: int) -> str:
+    """放进地址列的写法。
+
+    直接 ElideMiddle 会把结尾的 `Windows-Manager.exe` 截成
+    `Windows-Manager.e`，看着像打错了。所以放不下时优先保住文件名，
+    把中间的桶内路径换成「…」：`域名/…/Windows-Manager.exe`。
+    完整地址照旧在 tooltip 里，复制按钮复制的也是完整地址。
+    """
+    from PySide6.QtGui import QFontMetrics
+
+    metrics = QFontMetrics(font(12))
+    shown = url.split("://", 1)[-1].rstrip("/")
+    if metrics.horizontalAdvance(shown) <= width:
+        return shown
+
+    host, _, rest = shown.partition("/")
+    if not rest:
+        return metrics.elidedText(shown, Qt.ElideMiddle, width)
+    name = rest.rsplit("/", 1)[-1]
+    room = width - metrics.horizontalAdvance(f"/…/{name}")
+    if room < 32:
+        return metrics.elidedText(shown, Qt.ElideMiddle, width)
+    head = metrics.elidedText(host, Qt.ElideRight, room)
+    return f"{head}/…/{name}"
 
 
 class AboutPage(QWidget):
@@ -360,11 +392,11 @@ class AboutPage(QWidget):
             row.addWidget(label(f"待接入 · {channel.note}", 11, T.TEXT_DIM), 1)
             return box
 
-        shown = channel.url.split("://", 1)[-1].rstrip("/")
         # 地址列给固定宽：两个来源的域名长短不一，跟着文字走会让右边的按钮
-        # 一行一个位置。超出就省略中间，鼠标悬停看全貌。
-        addr = label(_elide(shown, 240), 12, T.ACCENT)
-        addr.setFixedWidth(240)
+        # 一行一个位置。放不下时保住文件名，中间省略（见 _short_address）。
+        # 380 而不是 240：OSS 直链比 GitHub 长一截，窄了只能截到文件名中间。
+        addr = label(_short_address(channel.url, 380), 12, T.ACCENT)
+        addr.setFixedWidth(380)
         addr.setTextInteractionFlags(Qt.TextSelectableByMouse)
         addr.setToolTip(f"{channel.url}\n{channel.note}")
         row.addWidget(addr, 0)

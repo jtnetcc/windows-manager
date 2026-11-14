@@ -105,6 +105,88 @@ def _env(name: str) -> str:
     return os.environ.get(name, "")
 
 
+def _children(parent: str, prefix: str = "") -> list[str]:
+    """列出 parent 下名字以 prefix 开头的子目录，按名字排序。
+
+    Chromium 系的 `User Data` 里除了 `Default` 还可能有 `Profile 1`、`Profile 2`，
+    Store 应用则是一个包一个目录 —— 这些都没法写死路径，只能扫描时现查。
+    读不到就返回空列表，不让一条规则把整轮扫描带崩。
+    """
+    out: list[str] = []
+    try:
+        for entry in os.scandir(parent):
+            if not entry.is_dir():
+                continue
+            if prefix and not entry.name.lower().startswith(prefix.lower()):
+                continue
+            out.append(entry.path)
+    except OSError:
+        return []
+    return sorted(out)
+
+
+# Chromium 系的缓存目录。原来只收 `Cache`，实际 `Code Cache` 和 `GPUCache`
+# 常常比它更大，尤其是装了扩展、常看视频的浏览器。
+CHROMIUM_CACHE_DIRS = (
+    "Cache",
+    "Code Cache",
+    "GPUCache",
+    "ShaderCache",
+    "GrShaderCache",
+    "DawnCache",
+    r"Service Worker\CacheStorage",
+    r"Service Worker\ScriptCache",
+)
+
+
+def _chromium_caches(local: str, user_data: str) -> list[str]:
+    """一个 Chromium 浏览器下所有「可删且会重建」的缓存目录（含多用户配置）。"""
+    base = os.path.join(local, user_data)
+    profiles = [os.path.join(base, "Default"), *_children(base, "Profile")]
+    paths: list[str] = []
+    for profile in profiles:
+        if not os.path.isdir(profile):
+            continue
+        for sub in CHROMIUM_CACHE_DIRS:
+            path = os.path.join(profile, sub)
+            if os.path.isdir(path):
+                paths.append(path)
+    return paths
+
+
+def _store_caches(local: str) -> list[str]:
+    """Store / UWP 应用的本地缓存。
+
+    `LocalState` 才是应用数据，`LocalCache` 与 `TempState` 按微软的约定是
+    可丢弃的缓存，删掉应用会自己重建。
+    """
+    paths: list[str] = []
+    for package in _children(os.path.join(local, "Packages")):
+        for sub in ("LocalCache", "TempState"):
+            path = os.path.join(package, sub)
+            if os.path.isdir(path):
+                paths.append(path)
+    return paths
+
+
+# Firefox 的缓存目录。**不能整目录扫 Profiles** —— 那里面是 places.sqlite
+# （书签+历史）、logins.json（密码）、cookies.sqlite，按「3 天前的文件」一刀切
+# 会把它们全收走，而且删除直接进回收站，用户很难意识到丢了什么。
+FIREFOX_CACHE_DIRS = ("cache2", "startupCache", "shader-cache", "thumbnails", "OfflineCache")
+
+
+def _firefox_caches(local: str) -> list[str]:
+    """Firefox 每个配置目录下的缓存子目录（新版缓存放在 LOCALAPPDATA）。"""
+    profiles = os.path.join(local, r"Mozilla\Firefox\Profiles")
+    paths: list[str] = []
+    for profile in _children(profiles):
+        for sub in FIREFOX_CACHE_DIRS:
+            path = os.path.join(profile, sub)
+            if os.path.isdir(path):
+                paths.append(path)
+    return paths
+
+
 @lru_cache(maxsize=1)
 def builtin_rules() -> tuple[Rule, ...]:
     """内置规则：只覆盖低风险、可再生的目录。
@@ -146,37 +228,93 @@ def builtin_rules() -> tuple[Rule, ...]:
                 note="程序崩溃时写下的内存转储",
             )
         )
-        for rule_id, name, sub in (
-            ("edge_cache", "Edge 缓存", r"Microsoft\Edge\User Data\Default\Cache"),
-            ("chrome_cache", "Chrome 缓存", r"Google\Chrome\User Data\Default\Cache"),
+        for rule_id, name, user_data in (
+            ("edge_cache", "Edge 缓存", r"Microsoft\Edge\User Data"),
+            ("chrome_cache", "Chrome 缓存", r"Google\Chrome\User Data"),
+            ("brave_cache", "Brave 缓存", r"BraveSoftware\Brave-Browser\User Data"),
         ):
-            path = os.path.join(local, sub)
-            if os.path.isdir(path):
+            cache_paths = _chromium_caches(local, user_data)
+            if cache_paths:
                 rules.append(
                     Rule(
                         rule_id,
                         name,
                         "浏览器缓存",
-                        [path],
+                        cache_paths,
                         3,
                         True,
-                        note="网页缓存，不影响登录状态",
+                        note="网页缓存与代码缓存，不影响登录状态和书签",
                     )
                 )
 
-        firefox = os.path.join(local, r"Mozilla\Firefox\Profiles")
-        if os.path.isdir(firefox):
+        store_cache = _store_caches(local)
+        if store_cache:
+            rules.append(
+                Rule(
+                    "store_cache",
+                    "应用商店缓存",
+                    "应用缓存",
+                    store_cache,
+                    3,
+                    True,
+                    note="UWP/Store 应用的临时缓存，应用会自行重建",
+                )
+            )
+
+        ff_cache = _firefox_caches(local)
+        if ff_cache:
             rules.append(
                 Rule(
                     "firefox_cache",
                     "Firefox 缓存",
                     "浏览器缓存",
-                    [firefox],
+                    ff_cache,
                     3,
                     True,
-                    note="网页缓存，不影响登录状态",
+                    note="只清 cache2 / startupCache 等缓存目录，不碰书签与密码",
                 )
             )
+
+        inet_cache = os.path.join(local, r"Microsoft\Windows\INetCache")
+        if os.path.isdir(inet_cache):
+            rules.append(
+                Rule(
+                    "inet_cache",
+                    "系统网页缓存",
+                    "系统缓存",
+                    [inet_cache],
+                    3,
+                    True,
+                    note="旧版组件与系统内嵌网页的缓存",
+                )
+            )
+
+        # 显卡着色器缓存：玩游戏、跑 3D 应用之后能攒到几百 MB 甚至几个 GB。
+        # 删掉只会让下次启动时重新编译着色器，不影响任何设置。
+        shader_paths = [
+            path
+            for path in (
+                os.path.join(local, "D3DSCache"),
+                os.path.join(local, r"NVIDIA\DXCache"),
+                os.path.join(local, r"NVIDIA\GLCache"),
+                os.path.join(local, r"AMD\DxCache"),
+                os.path.join(local, r"AMD\GLCache"),
+            )
+            if os.path.isdir(path)
+        ]
+        if shader_paths:
+            rules.append(
+                Rule(
+                    "shader_cache",
+                    "显卡着色器缓存",
+                    "系统缓存",
+                    shader_paths,
+                    3,
+                    True,
+                    note="下次启动游戏时会自动重新编译",
+                )
+            )
+
 
         explorer = os.path.join(local, r"Microsoft\Windows\Explorer")
         if os.path.isdir(explorer):
@@ -188,7 +326,7 @@ def builtin_rules() -> tuple[Rule, ...]:
                     [explorer],
                     3,
                     False,
-                    note="只清理 thumbcache_*.db",
+                    note="只清理 thumbcache_ / iconcache_ 数据库",
                 )
             )
 
@@ -277,6 +415,90 @@ def builtin_rules() -> tuple[Rule, ...]:
                 )
             )
 
+    # ---------------------------------------------------------- 系统残留
+    #
+    # 这几处是 C 盘上「用户看不见、但经常占几个 GB」的地方，删掉系统会重建
+    # 或本来就不再需要。全部在 Windows 目录下，必须显式给 allow_prefixes。
+    #
+    # 盘根下的东西（`C:\$WinREAgent`、Windows.old 之类）不在这里做：
+    # safety 对「根目录的直接子项」一律判保护，allow_prefixes 也放不开。
+    # 那条防线是给 pagefile.sys / bootmgr 兜底的，不为了几 GB 去动它。
+    leftovers = (
+        (
+            "live_kernel_reports",
+            "内核转储报告",
+            os.path.join(windir, "LiveKernelReports") if windir else "",
+            0,
+            "显卡/驱动异常时写下的诊断转储",
+        ),
+        (
+            "minidump",
+            "蓝屏转储",
+            os.path.join(windir, "Minidump") if windir else "",
+            0,
+            "蓝屏时保存的小型内存转储",
+        ),
+        (
+            "windows_panther",
+            "安装日志",
+            os.path.join(windir, "Panther") if windir else "",
+            7,
+            "系统安装与升级过程写下的日志",
+        ),
+        (
+            "windows_system_temp",
+            "系统临时目录",
+            os.path.join(windir, "SystemTemp") if windir else "",
+            3,
+            "Win11 24H2 起的独立系统临时目录",
+        ),
+    )
+    for rule_id, name, path, age, note in leftovers:
+        if path and os.path.isdir(path):
+            rules.append(
+                Rule(
+                    rule_id,
+                    name,
+                    "系统残留",
+                    [path],
+                    age,
+                    True,
+                    allow_prefixes=[path],
+                    note=note,
+                    needs_admin=True,
+                )
+            )
+
+    # ---------------------------------------------------------- 开发缓存
+    #
+    # 开发机上是几十 GB 级别。默认不勾：删了要重新下载，联网慢的时候很痛，
+    # 让用户自己判断。
+    if local:
+        dev_caches: list[str] = []
+        for sub in (
+            r"npm-cache\_cacache",
+            r"pip\Cache",
+            r"Yarn\Cache",
+            r"pnpm\store",
+        ):
+            path = os.path.join(local, sub)
+            if os.path.isdir(path):
+                dev_caches.append(path)
+        if dev_caches:
+            rules.append(
+                Rule(
+                    "dev_cache",
+                    "开发工具缓存",
+                    "开发缓存",
+                    dev_caches,
+                    7,
+                    True,
+                    note="npm / pip / Yarn / pnpm 的下载缓存，删后需要重新下载",
+                    default_off=True,
+                )
+            )
+
+
     # 社交软件缓存**不在这里扫**。
     #
     # 微信/QQ/企业微信/钉钉的缓存原来在这四行里各有一条规则，而「软件专清」
@@ -342,8 +564,9 @@ def _accept(path: str, name: str, rule: Rule, age_days: float) -> bool:
 
     if lowered in SYSTEM_MARKER_FILES:
         return False
-    # 缩略图规则只收 thumbcache_*.db
-    if rule.id == "thumbnails" and not lowered.startswith("thumbcache_"):
+    # 缩略图规则只收 thumbcache_*/iconcache_*.db：Explorer 目录下还有很多
+    # 数据库文件（比如 `iconcache_*` 的兄弟 `thumbcache_idx.db`），不能整目录收
+    if rule.id == "thumbnails" and not lowered.startswith(("thumbcache_", "iconcache_")):
         return False
     if lowered.endswith(".lnk"):
         return False

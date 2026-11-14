@@ -49,6 +49,16 @@ _EXE_KEY = "windows-manager/latest/Windows-Manager.exe"
 
 TIMEOUT = 3
 
+
+def download_url() -> str:
+    """公开下载地址，给「关于 → 获取与分发」显示。
+
+    和检查更新用同一个对象路径，但两者的定位不同：这里是把地址摆出来让人
+    复制或点击下载（用户明确要知道从哪下），检查更新那边仍然只有一颗按钮。
+    """
+    return f"https://{_HOST}/{_EXE_KEY}"
+
+
 # 上一次检查结果。页面会因为换肤被重建，重建后要能把结果接回去。
 _LAST: UpdateInfo | None = None
 

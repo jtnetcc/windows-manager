@@ -79,7 +79,8 @@ def main() -> int:
     QTest.keyClick(window, Qt.Key_F1)
     app.processEvents()
     assert window._current_page == "about", f"F1 没打开关于页：{window._current_page}"
-    texts = [lb.text() for lb in window._pages["about"].findChildren(QLabel)]
+    labels = window._pages["about"].findChildren(QLabel)
+    texts = [lb.text() for lb in labels]
     assert any("免费" in t and "开源" in t for t in texts), "关于页没写「免费开源」"
     for word in ("永久免费", "开源可查", "无广告无捆绑", "不联网"):
         assert any(word in t for t in texts), f"关于页缺承诺：{word}"
@@ -92,8 +93,13 @@ def main() -> int:
     live = [c for c in CHANNELS if c.url]
     assert live, "没有任何可用的下载渠道"
     for channel in live:
-        host = channel.url.split("://", 1)[-1].rstrip("/")
+        # 卡片里为了对齐会把长地址的中间省掉（见 page_about._short_address），
+        # 所以这里校验「域名露出来了」+「tooltip 里有完整地址」两件事。
+        host = channel.url.split("://", 1)[-1].split("/", 1)[0]
         assert any(host in t for t in texts), f"关于页没显示地址：{channel.name}"
+        assert any(
+            channel.url in lb.toolTip() for lb in labels
+        ), f"关于页的 tooltip 里没有完整地址：{channel.name}"
     buttons = [btn.text() for btn in page.findChildren(QPushButton)]
     opened = buttons.count("打开")
     assert opened == len(live), f"「打开」按钮 {opened} 个，渠道 {len(live)} 个"
