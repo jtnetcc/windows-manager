@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+import threading
+
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QGridLayout,
@@ -12,7 +14,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core import sysinfo
+from core import activation, sysinfo
 from core.winmem import fmt_size
 
 from . import theme_dark as T
@@ -22,7 +24,7 @@ from .components import Card, label
 class InfoRow(QWidget):
     """一行「标签 + 值」。值太长时靠 tooltip 兜底。"""
 
-    def __init__(self, name: str, value: str = "", parent=None):
+    def __init__(self, name: str, value: str = "", width: int = 76, parent=None):
         super().__init__(parent)
         self.setFixedHeight(24)
         layout = QHBoxLayout(self)
@@ -31,7 +33,7 @@ class InfoRow(QWidget):
 
         self.lbl_name = label(name, 12, T.TEXT_DIM)
         # 没有标签名（比如显卡列表）时不占列宽，值直接从左边开始
-        self.lbl_name.setFixedWidth(76 if name else 0)
+        self.lbl_name.setFixedWidth(width if name else 0)
         self.lbl_name.setVisible(bool(name))
         self.lbl_value = label(value or "—", 12, T.TEXT)
         self.lbl_value.setTextInteractionFlags(Qt.TextSelectableByMouse)
@@ -46,11 +48,24 @@ class InfoRow(QWidget):
         self.lbl_value.setText(text)
         self.lbl_value.setToolTip(text if value else "")
 
+    def set_color(self, color: str) -> None:
+        self.lbl_value.setStyleSheet(
+            f"color: {color}; background: transparent; border: none;"
+        )
+
 
 class SysInfoPage(QWidget):
+    # 激活信息要起 cscript，一秒半起步，放主线程会把整页卡住。
+    # 用普通线程 + 队列信号回传：QThread 在换肤重建时被析构会崩，
+    # Python 线程不是 QObject，页面没了信号自然没人接，不用额外收尾。
+    activation_ready = Signal(object)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._info: sysinfo.SysInfo | None = None
+        self._activation: activation.ActivationInfo | None = None
+        self._activation_loading = False
+        self.activation_ready.connect(self._on_activation)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -131,6 +146,30 @@ class SysInfoPage(QWidget):
         self.card_net.body().addStretch(1)
         grid.addWidget(self.card_net, 2, 1)
 
+        # -- 激活与授权：整行通铺，内部拆两列，六项刚好三行
+        self.card_act = Card(padding=14, spacing=2)
+        self.card_act.body().addWidget(self._title("激活与授权", "key"))
+        columns = QHBoxLayout()
+        columns.setContentsMargins(0, 0, 0, 0)
+        columns.setSpacing(28)
+        self.row_act: dict[str, InfoRow] = {}
+        for names in (
+            ("激活状态", "激活方式", "系统激活时间"),
+            ("硬件激活时间", "产品密钥", "产品 ID"),
+        ):
+            column = QVBoxLayout()
+            column.setContentsMargins(0, 0, 0, 0)
+            column.setSpacing(2)
+            for name in names:
+                # 默认 76 是给四个字留的，「系统激活时间」六个字会截断
+                row = InfoRow(name, width=96)
+                column.addWidget(row)
+                self.row_act[name] = row
+            columns.addLayout(column, 1)
+        self.card_act.body().addLayout(columns)
+        self.card_act.body().addStretch(1)
+        grid.addWidget(self.card_act, 3, 0, 1, 2)
+
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 1)
 
@@ -163,6 +202,68 @@ class SysInfoPage(QWidget):
         info = sysinfo.collect()
         self._info = info
         self._render(info)
+        self._load_activation()
+
+    # ---------------------------------------------------------- 激活
+
+    def _load_activation(self) -> None:
+        """先占位再后台取，页面本身不等。"""
+        if self._activation is not None:
+            self._render_activation(self._activation)
+            return
+        if self._activation_loading:
+            return
+        self._activation_loading = True
+        for row in self.row_act.values():
+            row.set_value("读取中…")
+        threading.Thread(target=self._fetch_activation, daemon=True).start()
+
+    def _fetch_activation(self) -> None:
+        try:
+            result = activation.collect()
+        except Exception:
+            result = activation.ActivationInfo()
+        try:
+            self.activation_ready.emit(result)
+        except RuntimeError:
+            pass  # 页面已经换肤销毁
+
+    def _on_activation(self, result: activation.ActivationInfo) -> None:
+        self._activation_loading = False
+        self._activation = result
+        self._render_activation(result)
+
+    def _render_activation(self, act: activation.ActivationInfo) -> None:
+        colors = {"已激活": T.GREEN, "未激活": T.RED, "宽限期": T.AMBER}
+
+        row = self.row_act["激活状态"]
+        row.set_value(act.status or ("未检测到" if not act.queried else "—"))
+        row.set_color(colors.get(act.status, T.TEXT))
+        row.lbl_value.setToolTip(
+            act.status
+            if act.queried
+            else "读不到许可证状态（slmgr 不可用，或被安全策略拦截）"
+        )
+
+        self.row_act["激活方式"].set_value(act.method or "")
+        self.row_act["激活方式"].lbl_value.setToolTip(act.method_note or "—")
+
+        self.row_act["系统激活时间"].set_value(act.system_time)
+        self.row_act["系统激活时间"].lbl_value.setToolTip(act.system_note or "—")
+
+        self.row_act["硬件激活时间"].set_value(act.hardware_time)
+        self.row_act["硬件激活时间"].lbl_value.setToolTip(act.hardware_note or "—")
+
+        key_row = self.row_act["产品密钥"]
+        key_row.set_value(act.display_key)
+        if act.product_key:
+            key_row.lbl_value.setToolTip("来自 BackupProductKeyDefault，可直接用于重装")
+        elif act.partial_key:
+            key_row.lbl_value.setToolTip(f"只读到末五位 {act.partial_key}")
+        else:
+            key_row.lbl_value.setToolTip("未读出产品密钥")
+
+        self.row_act["产品 ID"].set_value(act.product_id)
 
     def _render(self, info: sysinfo.SysInfo) -> None:
         self.row_os["版本"].set_value(info.os_name)

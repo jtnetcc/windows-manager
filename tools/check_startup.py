@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -141,6 +142,36 @@ def main() -> int:
         assert bf.PRESETS[0][0] == "system", "「系统盘」不在范围列表第一位"
         print("磁盘空间两个分段可切 · 大文件默认系统盘 ✓")
         win.tasks.cancel_many("space", "space_sub")
+
+        # 系统信息：激活卡要起 cscript，1~2 秒才回来，单独排一个轮询
+        win.switch_page("sysinfo")
+        wait_activation(win, time.monotonic() + 25)
+
+    def wait_activation(win, deadline: float) -> None:
+        page = win._pages.get("sysinfo")
+        if page is not None and page._activation_loading:
+            if time.monotonic() < deadline:
+                QTimer.singleShot(300, lambda: wait_activation(win, deadline))
+                return
+            raise AssertionError("激活信息 25 秒没回来")
+        activation_card(win)
+
+    def activation_card(win) -> None:
+        from core import activation as act
+
+        page = win._pages["sysinfo"]
+        rows = page.row_act
+        expected = {"激活状态", "激活方式", "系统激活时间", "硬件激活时间",
+                    "产品密钥", "产品 ID"}
+        assert set(rows) == expected, f"激活卡的项不对：{set(rows) ^ expected}"
+        info = act.collect()
+        # 这台机器上一定有许可证库，时间推不出来说明路径或 ctime 读错了
+        assert info.system_time, "系统激活时间没推出来"
+        assert info.system_note, "系统激活时间缺来源说明"
+        status = rows["激活状态"].lbl_value.text()
+        assert status not in ("", "读取中…", "—"), f"激活状态没填：{status}"
+        print(f"系统信息激活卡 ✓（{status} · {info.system_time} · "
+              f"硬件 {info.hardware_time or '无记录'}）")
 
         win.switch_page("monitor")
         app.processEvents()

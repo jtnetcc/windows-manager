@@ -238,7 +238,8 @@ def _parse_smbios(info: SysInfo) -> None:
 # ---------------------------------------------------------------- 注册表
 
 
-def _reg(path: str, name: str, root=None):
+def reg(path: str, name: str, root=None):
+    """读一个 HKLM 值，读不到返回 None。activation.py 也用它。"""
     import winreg
 
     root = root or winreg.HKEY_LOCAL_MACHINE
@@ -252,10 +253,10 @@ def _reg(path: str, name: str, root=None):
 
 def _os_info(info: SysInfo) -> None:
     path = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion"
-    product = _reg(path, "ProductName") or ""
-    build = _reg(path, "CurrentBuild") or ""
-    ubr = _reg(path, "UBR")
-    display = _reg(path, "DisplayVersion") or ""
+    product = reg(path, "ProductName") or ""
+    build = reg(path, "CurrentBuild") or ""
+    ubr = reg(path, "UBR")
+    display = reg(path, "DisplayVersion") or ""
 
     # Win11 的注册表里 ProductName 仍写着 "Windows 10"，只能靠 build 号判断
     try:
@@ -269,18 +270,18 @@ def _os_info(info: SysInfo) -> None:
     info.os_build = f"{build}.{ubr}" if ubr else str(build)
     info.architecture = platform.machine()
 
-    stamp = _reg(path, "InstallDate")
+    stamp = reg(path, "InstallDate")
     if isinstance(stamp, int) and stamp > 0:
         info.install_date = time.strftime("%Y-%m-%d", time.localtime(stamp))
 
 
 def _cpu_info(info: SysInfo) -> None:
-    name = _reg(
+    name = reg(
         r"HARDWARE\DESCRIPTION\System\CentralProcessor\0", "ProcessorNameString"
     )
     if name:
         info.cpu_name = " ".join(str(name).split())
-    freq = _reg(
+    freq = reg(
         r"HARDWARE\DESCRIPTION\System\CentralProcessor\0", "~MHz"
     )
     if isinstance(freq, int) and not info.cpu_max_mhz:
