@@ -84,11 +84,11 @@ NAV_GROUPS = [
     (
         "清理",
         [
-            ("clean", "垃圾清理", "clean"),
-            ("appclean", "软件专清", "appclean"),
-            ("dup", "重复文件", "duplicate"),
-            ("bigfile", "磁盘空间", "folder"),
-            ("recycle", "回收中心", "recycle"),
+            # 原来这里五个入口（垃圾清理/软件专清/重复文件/磁盘空间/回收中心），
+            # 回答的是同一个问题「哪里能腾空间」，用户得先想「我的东西属于哪类」。
+            # 现在按操作粒度收成一个分段壳 + 一个空间分析。
+            ("cleanup", "清理中心", "clean"),
+            ("bigfile", "空间分析", "folder"),
         ],
     ),
     (
@@ -124,10 +124,8 @@ LAZY_STARTERS = {
     "software": "start_scan",
     # 系统信息不在这里：它的首次加载挂在 SysInfoPage.showEvent 上。
     # 走单发定时器换肤后约有 1/3 概率不落地，页面停在全横杠状态。
-    "appclean": "start_scan",
     "slim": "start_scan",
     "health": "start_probe",
-    "recycle": "start_scan",
     "registry": "start_scan",
     # 有缓存就先渲染、没有才扫：换肤重建时任务可能还在跑，
     # 直接 start_scan 会被 is_busy 挡回来，页面就停在空表上
@@ -167,12 +165,9 @@ PAGE_SUBS = {
     "monitor": "实时监控 CPU、内存、磁盘与网络",
     "sysinfo": "本机硬件与系统参数一目了然",
     "health": "能清多少、清哪里，以及对应的处理入口",
-    "clean": "只清理可再生的临时文件与缓存",
-    "appclean": "按软件清理缓存与已接收的图片视频",
+    "cleanup": "常规清理 / 按软件 / 重复文件 / 回收站",
     "slim": "关掉不需要的系统功能，收回能安全释放的空间",
-    "dup": "按内容哈希找出重复副本",
     "bigfile": "系统盘空间去哪了，以及哪些能回收",
-    "recycle": "回收站内容一览，按体积排序，可还原或清空",
     "startup": "开机自启的注册表项、快捷方式与计划任务",
     "registry": "卸载残留、启动项、App Paths 与 COM 组件的失效条目",
     "software": "已安装程序与卸载残留",
@@ -196,7 +191,11 @@ RECLAIM_HIDDEN_PAGES = {
     "slim",
     "about",
 }
-NO_OPTIMIZE_PAGES = RECLAIM_HIDDEN_PAGES | {"clean", "dup", "bigfile", "startup"}
+NO_OPTIMIZE_PAGES = RECLAIM_HIDDEN_PAGES | {"cleanup", "bigfile", "startup"}
+
+# 「清理中心」收编的四个分段，键名沿用旧的页面 key：
+# 跨页跳转还按 clean / appclean / dup / recycle 指路，switch_page 负责翻译。
+CLEANUP_TARGETS = {"clean", "appclean", "dup", "recycle"}
 
 AUTO_COOLDOWN = 150.0
 
@@ -391,6 +390,7 @@ class MainWindow(QMainWindow):
         self._space_segment = "analysis"
         self._startup_segment = "all"
         self._software_segment = "installed"
+        self._cleanup_segment = "clean"
         # 侧栏收起状态。换肤会整页重建，所以存在实例上而不是控件上
         self._sidebar_collapsed = bool(settings.sidebar_collapsed)
         self._group_labels: list[QWidget] = []
@@ -779,7 +779,16 @@ class MainWindow(QMainWindow):
         if name.startswith("page_"):
             key = name[5:]
             pages = self.__dict__.get("_pages")
-            if pages is not None and key in PAGE_TITLES:
+            if pages is None:
+                raise AttributeError(name)
+            # 清理中心的四个分段原来是独立页面，调试脚本还按老名字取。
+            # 收进壳里之后翻译成分段页面 —— 取哪个建哪个，只是不切过去。
+            if key in CLEANUP_TARGETS:
+                shell = self._ensure_page("cleanup")
+                if shell is not None:
+                    return shell.ensure_segment(key)
+                raise AttributeError(name)
+            if key in PAGE_TITLES:
                 return self._ensure_page(key)
         raise AttributeError(name)
 
@@ -829,15 +838,14 @@ class MainWindow(QMainWindow):
             page.navigate_requested.connect(self.switch_page)
             return page
 
-        if key == "clean":
-            from .page_clean import CleanPage
+        if key == "cleanup":
+            from .page_cleanup import CleanupPage
 
-            return CleanPage(self.store, self.tasks)
-
-        if key == "appclean":
-            from .page_appclean import AppCleanPage
-
-            return AppCleanPage(self.store, self.tasks)
+            page = CleanupPage(self.store, self.tasks)
+            page.segment_changed.connect(self._on_segment_changed)
+            if self._cleanup_segment != "clean":
+                page.set_segment(self._cleanup_segment)
+            return page
 
         if key == "slim":
             from .page_slim import SlimPage
@@ -848,11 +856,6 @@ class MainWindow(QMainWindow):
             page.elevate_requested.connect(self._on_admin_clicked)
             return page
 
-        if key == "dup":
-            from .page_dup import DupPage
-
-            return DupPage(self.store, self.tasks)
-
         if key == "bigfile":
             from .page_space import SpacePage
 
@@ -861,11 +864,6 @@ class MainWindow(QMainWindow):
             if self._space_segment != "analysis":
                 page.set_segment(self._space_segment)
             return page
-
-        if key == "recycle":
-            from .page_recycle import RecyclePage
-
-            return RecyclePage(self.tasks)
 
         if key == "startup":
             from .page_startup import StartupPage
@@ -922,6 +920,14 @@ class MainWindow(QMainWindow):
             page.set_memory_status(text, color)
 
     def switch_page(self, key: str) -> None:
+        # 旧 key 兼容：体检的「处理」、顶部「可释放」、优化链路、托盘菜单
+        # 都还在用 clean/appclean/dup/recycle 指路。统一翻译成「清理中心 +
+        # 对应的分段」，调用方不用跟着改，也避免漏改一处就跳不过去。
+        segment = ""
+        if key in CLEANUP_TARGETS:
+            segment = key
+            key = "cleanup"
+
         # 建页时 _ensure_page 已经喂过一帧，这里只补「本来就在、只是切回来」的情况
         existed = key in self._pages
         page = self._ensure_page(key)
@@ -934,6 +940,9 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentWidget(page)
         self.lbl_title.setText(PAGE_TITLES.get(key, ""))
         self.lbl_index.setText(f"{_nav_index(key):02d}")
+        if segment:
+            # 走分段器同一个入口，副标题会跟着改
+            page.set_segment(segment)
         # 监控页的副标题跟着内部分段走，其余页用固定文案
         sub = getattr(page, "subtitle", None)
         self.lbl_sub.setText(sub() if callable(sub) else PAGE_SUBS.get(key, ""))
@@ -990,6 +999,9 @@ class MainWindow(QMainWindow):
         elif self._current_page == "software":
             self._software_segment = key
             self.lbl_sub.setText(subtitle)
+        elif self._current_page == "cleanup":
+            self._cleanup_segment = key
+            self.lbl_sub.setText(subtitle)
 
     # ---------------------------------------------------------- 体检数据
 
@@ -1015,10 +1027,14 @@ class MainWindow(QMainWindow):
         在这儿重写一份迟早和页面上的勾选对不上。这三页都很轻（各不到 1 MB），
         而且只有用户按下体检时才会发生。
         """
-        for key in ("clean", "dup", "registry", "health"):
-            self._ensure_page(key)
-        self._pages["clean"].start_scan()
-        self._pages["dup"].start_scan()
+        cleanup = self._ensure_page("cleanup")
+        self._ensure_page("registry")
+        self._ensure_page("health")
+        # 垃圾和查重现在是「清理中心」里的两个分段：建出来但不切过去
+        for segment in ("clean", "dup"):
+            page = cleanup.ensure_segment(segment) if cleanup else None
+            if page is not None:
+                page.start_scan()
         self._pages["registry"].start_scan()
         self._pages["health"].start_probe()
 
@@ -1044,7 +1060,7 @@ class MainWindow(QMainWindow):
     def _install_shortcuts(self) -> None:
         """Ctrl+1..9 按侧栏顺序切页，Ctrl+0 给第 10 项，F5 重扫，Ctrl+, 设置，F1 关于。
 
-        侧栏有 15 个入口，数字键只够 10 个。底部这三项不占数字键 ——
+        侧栏现在 11 个入口，数字键只够 10 个。底部三项不占数字键 ——
         系统信息与关于都是纯查看页，偏好设置有 Ctrl+, 这个通用键位。
         """
         for index, (key, _text) in enumerate(NAV_ITEMS[:10], start=1):
@@ -1113,7 +1129,8 @@ class MainWindow(QMainWindow):
         """任务中心的结果统一落到 store，页面各自订阅。"""
         if task_id == "recycle":
             # 回收中心没建就不必为了一份结果把它造出来：进去时会自己重扫
-            page = self._pages.get("recycle")
+            cleanup = self._pages.get("cleanup")
+            page = cleanup.segment_page("recycle") if cleanup else None
             if page is not None:
                 page.on_loaded(result or [])
             return
