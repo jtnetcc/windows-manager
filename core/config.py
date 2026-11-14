@@ -7,6 +7,7 @@ import os
 import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from . import applog
 
 APP_NAME = "MemoryKeeper"
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
@@ -67,7 +68,7 @@ class Settings:
                 encoding="utf-8",
             )
         except OSError:
-            pass
+            applog.silenced("config.save")
 
     @classmethod
     def load(cls) -> "Settings":
@@ -136,7 +137,7 @@ def set_autostart(enabled: bool) -> bool:
                 try:
                     winreg.DeleteValue(key, APP_NAME)
                 except FileNotFoundError:
-                    pass
+                    applog.silenced("config.set_autostart")
         return True
     except OSError:
         return False

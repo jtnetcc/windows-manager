@@ -86,6 +86,12 @@ python tools/releases.py --to 0.0.37  # 回滚到该版本
 - 卸载残留是启发式判断：四道闸门过滤 + 只列不勾选 + 删除进回收站，
   详见 [`docs/交接文档.md`](docs/交接文档.md) 6.35
 
+## 出问题时
+
+- 日志在 `%APPDATA%\MemoryKeeper\logs\app.log`（1 MB × 5 份滚动）
+- 关于页有「导出诊断信息」：环境摘要 + 日志尾部存成一个文件，路径自动复制
+- 读不到数据时界面会明说「读取失败」而不是显示空列表 —— 两者是不同的事
+
 ## 文档
 
 - [`docs/交接文档.md`](docs/交接文档.md) —— 架构、设计决策、踩过的坑（改动前先读）
@@ -103,4 +109,4 @@ python tools/push_github.py --repo jtnetcc/windows-manager -m "feat: xxx"
 
 ## 当前版本
 
-v0.0.38 · 内测
+v0.0.39 · 内测

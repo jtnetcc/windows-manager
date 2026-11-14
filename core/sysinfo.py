@@ -21,6 +21,7 @@ import struct
 import time
 from ctypes import wintypes
 from dataclasses import dataclass, field
+from . import applog
 
 RSMB = 0x52534D42  # 'RSMB'，原始 SMBIOS 表
 
@@ -269,7 +270,7 @@ def _os_info(info: SysInfo) -> None:
         if int(build) >= 22000:
             product = product.replace("Windows 10", "Windows 11")
     except (TypeError, ValueError):
-        pass
+        applog.failed("sysinfo.os_info")
 
     info.os_name = product or platform.system()
     info.os_version = display
@@ -314,7 +315,7 @@ def _gpu_info(info: SysInfo) -> None:
                     continue
                 info.gpus.append(desc)
     except OSError:
-        pass
+        applog.failed("sysinfo.gpu_info")
 
 
 def _display_info(info: SysInfo) -> None:
@@ -328,7 +329,7 @@ def _display_info(info: SysInfo) -> None:
         if monitors:
             info.monitors = int(monitors)
     except Exception:
-        pass
+        applog.failed("sysinfo.display_info")
 
 
 def _network_info(info: SysInfo) -> None:
@@ -346,7 +347,7 @@ def _network_info(info: SysInfo) -> None:
         if not (node >> 40) & 1:
             info.mac = ":".join(f"{(node >> (8 * i)) & 0xFF:02X}" for i in range(5, -1, -1))
     except Exception:
-        pass
+        applog.failed("sysinfo.network_info")
 
     try:
         # 连一个不存在的地址只为让系统选出「出口网卡」，不会真的发包
@@ -379,7 +380,7 @@ def _memory_total(info: SysInfo) -> None:
         if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
             info.memory_total = int(status.ullTotalPhys)
     except Exception:
-        pass
+        applog.failed("sysinfo.memory_total")
 
 
 def collect() -> SysInfo:

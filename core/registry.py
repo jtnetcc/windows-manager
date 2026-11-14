@@ -25,6 +25,7 @@ from __future__ import annotations
 import os
 import winreg
 from dataclasses import dataclass
+from . import applog
 
 HIVES = {
     "HKLM": winreg.HKEY_LOCAL_MACHINE,
@@ -93,7 +94,7 @@ def _values(hive: str, path: str) -> dict[str, tuple[object, int]]:
                 out[name] = (data, vtype)
                 index += 1
     except OSError:
-        pass
+        applog.silenced("registry._values")
     return out
 
 
@@ -109,7 +110,7 @@ def _subkeys(hive: str, path: str) -> list[str]:
                     break
                 index += 1
     except OSError:
-        pass
+        applog.silenced("registry._subkeys")
     return out
 
 
@@ -288,7 +289,7 @@ def _scan_com(out: list[Issue], limit: int = 600) -> None:
                         )
                     )
     except OSError:
-        pass
+        applog.silenced("registry._scan_com")
 
 
 def scan(should_stop=lambda: False, on_progress=None) -> list[Issue]:

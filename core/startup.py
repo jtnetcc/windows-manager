@@ -22,12 +22,27 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import winpath
+from . import applog
 
 DISABLED_SUFFIX = ".off"
 
 # 扫描计划任务要跑一次 schtasks，比较慢，缓存一段时间
 _TASK_CACHE: tuple[float, list["StartupEntry"]] | None = None
 _TASK_TTL = 120.0
+
+# 上一次扫描里哪些来源读失败了。空字典 = 三处来源都正常。
+#
+# 有了它，页面才能把「这台机器确实没有第三方计划任务」和「schtasks 跑不起来」
+# 分开说 —— 之前两者都是一张空表，用户以为前者。
+_errors: dict[str, str] = {}
+
+
+def set_error(source: str, message: str) -> None:
+    _errors[source] = message
+
+
+def last_errors() -> dict[str, str]:
+    return dict(_errors)
 
 RUN_KEYS = (
     ("HKCU", r"Software\Microsoft\Windows\CurrentVersion\Run"),
@@ -131,7 +146,7 @@ def _set_registry_enabled(entry_id: str, enabled: bool) -> tuple[bool, str]:
             try:
                 winreg.DeleteValue(key, target)
             except OSError:
-                pass
+                applog.silenced("startup._set_registry_enabled")
             return False, "删除原值失败，该项可能被系统策略保护"
         return True, ""
     finally:
@@ -221,7 +236,9 @@ def _set_folder_enabled(entry_id: str, enabled: bool) -> tuple[bool, str]:
 # ---------------------------------------------------------------- 计划任务
 
 
-def _run_schtasks(args: list[str]) -> str:
+def _run_schtasks(args: list[str]) -> str | None:
+    """跑 schtasks。**失败返回 None，不是空串** —— 空串会一路传成「没有任务」，
+    用户看到的是「这台机器没有第三方计划任务」，而实际是命令跑不起来。"""
     creation = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     try:
         result = subprocess.run(
@@ -230,8 +247,14 @@ def _run_schtasks(args: list[str]) -> str:
             timeout=10,
             creationflags=creation,
         )
-    except (OSError, subprocess.SubprocessError):
-        return ""
+    except (OSError, subprocess.SubprocessError) as exc:
+        applog.logger("startup").warning("schtasks 无法执行：%s", exc)
+        return None
+    if result.returncode != 0:
+        applog.logger("startup").warning(
+            "schtasks 退出码 %s", result.returncode
+        )
+        return None
     raw = result.stdout or b""
     for encoding in ("mbcs", "utf-8", "gbk"):
         try:
@@ -277,6 +300,10 @@ def _task_entries(use_cache: bool = True) -> list[StartupEntry]:
         return _TASK_CACHE[1]
 
     text = _run_schtasks(["/query", "/fo", "CSV", "/nh"])
+    if text is None:
+        # 只有「真的没有任务」和「读不出来」分开，页面才敢说人话
+        set_error("task", "schtasks 无法执行，可能是权限不足或被安全策略拦截")
+        return []
     entries: list[StartupEntry] = []
     for line in text.splitlines():
         line = line.strip()
@@ -323,17 +350,27 @@ def _set_task_enabled(entry_id: str, enabled: bool) -> tuple[bool, str]:
 
 
 def list_entries(include_tasks: bool = True, use_cache: bool = True) -> list[StartupEntry]:
+    """扫三处来源。读失败的来源记在 `last_errors()` 里，不影响其它来源。"""
+    _errors.clear()
     entries: list[StartupEntry] = []
-    for loader in (_registry_entries, _folder_entries):
+
+    for loader, source, label in (
+        (_registry_entries, "registry", "注册表启动项"),
+        (_folder_entries, "folder", "启动文件夹"),
+    ):
         try:
             entries.extend(loader())
-        except Exception:
-            continue
+        except Exception as exc:
+            set_error(source, f"{label}读取失败：{exc}")
+            applog.logger("startup").warning("%s 读取失败", label, exc_info=True)
+
     if include_tasks and sys.platform == "win32":
         try:
             entries.extend(_task_entries(use_cache))
-        except Exception:
-            pass
+        except Exception as exc:
+            set_error("task", f"计划任务读取失败：{exc}")
+            applog.failed("startup.list_entries.tasks")
+
     # 已启用的排前面，然后按来源、名称
     entries.sort(key=lambda e: (not e.enabled, e.source, e.name.lower()))
     return entries

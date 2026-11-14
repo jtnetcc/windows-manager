@@ -38,6 +38,7 @@ from .components import (
 )
 from .feed import feed
 from .page_process import ProcessPage
+from core import applog
 
 KPI_HEIGHT = 66
 
@@ -391,7 +392,7 @@ class OverviewPage(QWidget):
             if size > 1024 ** 3:
                 items.append((f"回收站 {fmt_bytes(size)} · 去查看", "recycle", False))
         except Exception:
-            pass
+            applog.silenced("pages_monitor.refresh_actions")
 
         if not items:
             items.append(("做一次全面体检", "__full_check__", True))

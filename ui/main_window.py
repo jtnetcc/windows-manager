@@ -61,6 +61,7 @@ from core.task import TaskCenter
 from . import appicon, icons, theme_dark as T, tooltip
 from .components import Hairline, NavButton, Vitals, label, mono_label
 from .feed import feed
+from core import applog
 
 # 十四个页面模块不再在这里导入：启动只建首屏那一页，模块也跟着按需加载
 # （见 _create_page）。全部导入光模块就要多占 9 MB 常驻内存，而其中大半
@@ -290,7 +291,7 @@ def apply_titlebar_theme(widget: QWidget) -> None:
             ) == 0:
                 break
     except Exception:
-        pass
+        applog.silenced("main_window.apply_titlebar_theme")
 
 
 class CloseChoiceDialog(QDialog):
@@ -617,7 +618,7 @@ class MainWindow(QMainWindow):
             self.settings.save()
         except Exception:
             # 配置写不进去不该拦着用户用界面，下次启动回到展开态而已
-            pass
+            applog.silenced("main_window._toggle_sidebar")
 
     def _apply_sidebar_state(self) -> None:
         """按当前状态调整侧栏宽度、图标轨道和各处可见性。"""
@@ -1767,7 +1768,7 @@ class MainWindow(QMainWindow):
             try:
                 handler()
             except Exception:
-                pass
+                applog.silenced("main_window._stop_page_workers")
 
     def _shutdown(self) -> None:
         # 先摘掉全局事件过滤器：它挂在 QApplication 上，比窗口活得久，

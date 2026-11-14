@@ -27,6 +27,7 @@ import time
 from dataclasses import dataclass, field
 
 from . import apps, safety, trash
+from . import applog
 
 # 三个根：(环境变量名, 界面上的中文标签)
 ROOTS = (
@@ -149,7 +150,7 @@ def _running_claims() -> set[str]:
                     names.add(key)
     except Exception:
         # 拿不到进程列表就少一层保护，不能因此让整页崩掉
-        pass
+        applog.silenced("leftover._running_claims")
     return names
 
 
@@ -181,7 +182,7 @@ def _program_folder_names() -> set[str]:
                 if os.path.isdir(part.mountpoint):
                     roots.append(part.mountpoint)
     except Exception:
-        pass
+        applog.silenced("leftover._program_folder_names")
 
     names: set[str] = set()
     for root in roots:

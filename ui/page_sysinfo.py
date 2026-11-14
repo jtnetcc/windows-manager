@@ -19,6 +19,7 @@ from core.winmem import fmt_size
 
 from . import theme_dark as T
 from .components import Card, ElidedLabel, label
+from core import applog
 
 
 class _DiskBlock(QWidget):
@@ -138,6 +139,7 @@ class SysInfoPage(QWidget):
         self._disks: list = []
         self._storage_loading = False
         self._storage_done = False
+        self._storage_error = ""
         self.activation_ready.connect(self._on_activation)
         self.storage_ready.connect(self._on_storage)
 
@@ -313,16 +315,21 @@ class SysInfoPage(QWidget):
         try:
             disks = diskinfo.inventory()
         except Exception:
+            applog.failed("page_sysinfo.fetch_storage")
             disks = []
         try:
-            self.storage_ready.emit(disks)
+            # 连失败原因一起带回去：否则页面只能说「未检测到物理磁盘」，
+            # 而这台机器可能有三块盘，只是 PowerShell 没跑起来
+            self.storage_ready.emit((disks, diskinfo.last_error()))
         except RuntimeError:
-            pass
+            applog.silenced("page_sysinfo._fetch_storage")
 
-    def _on_storage(self, disks: list) -> None:
+    def _on_storage(self, payload) -> None:
+        disks, error = payload if isinstance(payload, tuple) else (payload, "")
         self._storage_loading = False
         self._storage_done = True
         self._disks = disks
+        self._storage_error = error
         self._render_storage(disks)
 
     def _render_storage(self, disks: list) -> None:
@@ -332,8 +339,21 @@ class SysInfoPage(QWidget):
                 widget.deleteLater()
 
         if not disks:
-            hint = "读取中…" if self._storage_loading else "未检测到物理磁盘"
-            self.disk_box.addWidget(InfoRow("", hint))
+            if self._storage_loading:
+                hint = "读取中…"
+            elif self._storage_error:
+                hint = "读取失败"
+            else:
+                hint = "未检测到物理磁盘"
+            row = InfoRow("", hint)
+            if self._storage_error:
+                row.set_color(T.AMBER)
+                row.lbl_value.setToolTip(
+                    f"{self._storage_error}\n\n"
+                    "磁盘信息通过 PowerShell 读取，被安全软件拦截或策略限制时会失败。"
+                    "完整原因见日志。"
+                )
+            self.disk_box.addWidget(row)
             return
 
         for disk in disks:
@@ -361,7 +381,7 @@ class SysInfoPage(QWidget):
         try:
             self.activation_ready.emit(result)
         except RuntimeError:
-            pass  # 页面已经换肤销毁
+            applog.silenced("page_sysinfo._fetch_activation")
 
     def _on_activation(self, result: activation.ActivationInfo) -> None:
         self._activation_loading = False

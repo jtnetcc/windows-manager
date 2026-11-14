@@ -14,6 +14,7 @@ import os
 import subprocess
 import time
 from dataclasses import dataclass, field, replace
+from . import applog
 
 GB = 1024 ** 3
 
@@ -504,7 +505,7 @@ def probe_system(should_stop=lambda: False) -> HealthSnapshot | None:
         snapshot.system_total = usage.total
         snapshot.system_free = usage.free
     except OSError:
-        pass
+        applog.failed("health.probe_gpu")
     if should_stop():
         return None
 
@@ -518,7 +519,7 @@ def probe_system(should_stop=lambda: False) -> HealthSnapshot | None:
             "",
         )
     except Exception:
-        pass
+        applog.failed("health.probe_startup")
     if should_stop():
         return None
 
@@ -541,7 +542,7 @@ def probe_system(should_stop=lambda: False) -> HealthSnapshot | None:
     try:
         snapshot.memory_percent = psutil.virtual_memory().percent
     except Exception:
-        pass
+        applog.failed("health.probe_partitions")
 
     try:
         snapshot.partition_count = len(

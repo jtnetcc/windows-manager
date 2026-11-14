@@ -27,6 +27,7 @@ import psutil
 
 from . import apps, safety
 from .optimizer import CRITICAL_PROCESSES, terminate_tree
+from . import applog
 
 # Restart Manager 只需要「谁在占用」，传太多文件会拖慢查询
 MAX_FILES = 400
@@ -263,7 +264,7 @@ def _post_close(pid: int) -> None:
         try:
             user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
         except Exception:
-            pass
+            applog.silenced("filelock._post_close")
 
 
 def close(

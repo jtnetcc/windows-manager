@@ -15,6 +15,7 @@ from dataclasses import dataclass
 import psutil
 
 from . import winmem, winpath
+from . import applog
 
 MB = 1024 * 1024
 
@@ -171,7 +172,7 @@ class MetricsCollector:
                 )
             parts.sort(key=lambda p: p["mount"].lower())
         except Exception:
-            pass
+            applog.failed("metrics.partitions")
         if parts:
             self._partitions = tuple(parts)
 
@@ -188,7 +189,7 @@ class MetricsCollector:
                     "speed": int(stat.speed) if stat else 0,
                 }
         except Exception:
-            pass
+            applog.failed("metrics.ifaces")
         if meta:
             self._iface_meta = meta
 
@@ -231,7 +232,7 @@ class MetricsCollector:
             self._last_iface = current
             interfaces.sort(key=lambda x: x["recv"] + x["sent"], reverse=True)
         except Exception:
-            pass
+            applog.failed("metrics.network")
 
         return NetworkMetrics(
             down_bps=down,
@@ -252,7 +253,7 @@ class MetricsCollector:
                     write = max(0.0, (counters.write_bytes - self._last_disk.write_bytes) / dt)
                 self._last_disk = counters
         except Exception:
-            pass
+            applog.failed("metrics.disk_io")
 
         mount = winpath.system_drive()
         try:
@@ -270,7 +271,7 @@ class MetricsCollector:
                     fs = part.fstype
                     break
         except Exception:
-            pass
+            applog.failed("metrics.disk_usage")
 
         return DiskMetrics(
             read_bps=read,
