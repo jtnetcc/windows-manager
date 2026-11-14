@@ -26,6 +26,7 @@ import os
 import struct
 from ctypes import wintypes
 from dataclasses import dataclass
+from . import applog
 
 # 回收站文件夹的 Known Folder ID
 FOLDERID_RecycleBinFolder = "{B7534046-3ECB-4C18-BE4E-64CD4CB7D6AC}"
@@ -65,7 +66,7 @@ def bin_path() -> str:
             if value:
                 return value
     except Exception:
-        pass
+        applog.failed("recycle.bin_path")
     return os.path.join(os.environ.get("SystemDrive", "C:") + "\\", "$Recycle.Bin")
 
 
@@ -198,7 +199,7 @@ def restore(items: list[Item]) -> tuple[int, int]:
             try:
                 os.remove(item.info_path)
             except OSError:
-                pass
+                applog.silenced("recycle.restore")
             ok += 1
         except (OSError, shutil.Error):
             failed += 1

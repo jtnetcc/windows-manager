@@ -22,6 +22,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from . import safety
+from . import applog
 
 BATCH = 60
 MAX_FILES_PER_RULE = 40000
@@ -295,7 +296,7 @@ def builtin_rules() -> tuple[Rule, ...]:
                 )
             )
     except Exception:
-        pass
+        applog.silenced("cleaner.builtin_rules")
 
     program_data = _env("ProgramData") or _env("ALLUSERSPROFILE")
     if program_data:

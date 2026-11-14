@@ -22,6 +22,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+from . import applog
 
 # 受保护的目录前缀（小写比较）。系统盘 Windows 目录不写死在这里，
 # 而是运行时按 WINDIR / SystemDrive 计算，兼容系统盘不是 C: 的机器。
@@ -139,7 +140,7 @@ def is_protected(
         if exe_dir and canon.startswith(exe_dir):
             return True
     except (OSError, ValueError):
-        pass
+        applog.silenced("safety.is_protected")
 
     return False
 

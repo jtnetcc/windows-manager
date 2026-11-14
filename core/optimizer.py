@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 import psutil
 
 from . import winmem
+from . import applog
 
 # 无论用户怎么勾选，都不允许结束这些进程
 CRITICAL_PROCESSES = {
@@ -62,13 +63,13 @@ def visible_window_pids() -> set[int]:
                 if pid.value:
                     pids.add(int(pid.value))
         except Exception:
-            pass
+            applog.silenced("optimizer.callback")
         return True
 
     try:
         user32.EnumWindows(WNDENUMPROC(callback), 0)
     except Exception:
-        pass
+        applog.silenced("optimizer.visible_window_pids")
     return pids
 
 

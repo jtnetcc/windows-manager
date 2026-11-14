@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import ctypes
 from ctypes import wintypes
+from . import applog
 
 FO_DELETE = 3
 FOF_SILENT = 0x0004
@@ -110,7 +111,7 @@ def stats() -> tuple[int, int]:
         if lib.SHQueryRecycleBinW(None, ctypes.byref(info)) == 0:
             return int(info.i64Size), int(info.i64NumItems)
     except Exception:
-        pass
+        applog.failed("trash.stats")
     return 0, 0
 
 

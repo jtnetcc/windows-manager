@@ -18,6 +18,7 @@ import time
 from dataclasses import dataclass, field
 
 from . import cleaner, optimizer, winmem
+from . import applog
 
 
 @dataclass
@@ -132,7 +133,7 @@ def make_task(store, deep: bool = False):
                     f"回收站占用 {winmem.fmt_size(size)}，可以清空（去「垃圾清理」页）"
                 )
         except Exception:
-            pass
+            applog.silenced("optimize.run")
 
         out.duration = time.perf_counter() - started
         report(100, "完成")

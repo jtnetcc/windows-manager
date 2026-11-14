@@ -15,6 +15,7 @@ import time
 from dataclasses import dataclass, field
 
 from .config import config_dir
+from . import applog
 
 PATH = config_dir() / "space_history.json"
 VERSION = 1
@@ -80,7 +81,7 @@ def _save(items: list[Snapshot]) -> None:
             encoding="utf-8",
         )
     except OSError:
-        pass
+        applog.silenced("spacehistory._save")
 
 
 def record(root, used: int, total: int) -> None:
@@ -162,4 +163,4 @@ def clear() -> None:
         try:
             PATH.unlink()
         except OSError:
-            pass
+            applog.silenced("spacehistory.clear")

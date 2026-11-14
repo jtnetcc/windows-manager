@@ -156,7 +156,11 @@ class StartupPage(QWidget):
             entries = startup.list_entries(include_tasks=True, use_cache=use_cache)
             if should_stop():
                 return None
-            return StartupState(entries=entries, scanned_at=time.time())
+            return StartupState(
+                entries=entries,
+                scanned_at=time.time(),
+                errors=startup.last_errors(),
+            )
 
         return run
 
@@ -249,9 +253,38 @@ class StartupPage(QWidget):
         self.table.setUpdatesEnabled(True)
         self._loading = False
 
+        self._update_summary(rows)
+
+    def _update_summary(self, rows: list) -> None:
+        """状态行要能区分「确实没有」和「没读出来」。"""
+        errors = dict(self.store.startup.errors or {})
+        # 只看当前分段相关的来源；「全部」段全都算
+        if self._key != "all":
+            errors = {k: v for k, v in errors.items() if k == self._key}
+
         enabled = sum(1 for e in rows if e.enabled)
+        if errors:
+            # 详情进 tooltip，状态行只留一句
+            if rows:
+                self.lbl_count.setText(
+                    f"{len(rows)} 项 · 已启用 {enabled} · 有来源读取失败"
+                )
+            else:
+                self.lbl_count.setText("读取失败 · 悬停看原因")
+            self.lbl_count.setToolTip("\n".join(errors.values()) + "\n\n完整原因见日志")
+            self.lbl_count.setStyleSheet(
+                f"color: {T.AMBER}; background: transparent; border: none;"
+            )
+            return
+
+        self.lbl_count.setToolTip("")
+        self.lbl_count.setStyleSheet(
+            f"color: {T.TEXT_DIM}; background: transparent; border: none;"
+        )
         if not rows:
-            self.lbl_count.setText("没有匹配的启动项")
+            self.lbl_count.setText(
+                "没有第三方计划任务" if self._key == "task" else "没有匹配的启动项"
+            )
         else:
             self.lbl_count.setText(f"{len(rows)} 项 · 已启用 {enabled}")
 

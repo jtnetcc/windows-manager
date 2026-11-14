@@ -13,6 +13,7 @@ from __future__ import annotations
 import time
 from collections import deque
 from dataclasses import dataclass
+from . import applog
 
 GB = 1024 ** 3
 
@@ -278,4 +279,4 @@ def play_alert_sound(level: str = LEVEL_WARN) -> None:
         try:
             winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
         except Exception:
-            pass
+            applog.silenced("alerts.play_alert_sound")

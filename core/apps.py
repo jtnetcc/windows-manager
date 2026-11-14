@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 from . import winpath
+from . import applog
 
 # 显式指定 32/64 位视图。原来靠 WOW6432Node 路径区分，只在 64 位 Python 下成立；
 # 32 位进程打开 HKLM\SOFTWARE 会被系统重定向到 WOW6432Node，
@@ -321,7 +322,7 @@ def _probe_folder_info(folder: str, uninstaller: str) -> dict[str, str]:
         try:
             sized.append((os.path.getsize(os.path.join(folder, name)), name))
         except OSError:
-            pass
+            applog.silenced("apps._probe_folder_info")
     sized.sort(reverse=True)
 
     skip = os.path.normcase(os.path.basename(uninstaller))
@@ -352,7 +353,7 @@ def _dir_size(path: str, deadline: float) -> int:
             try:
                 total += os.stat(os.path.join(dirpath, name)).st_size
             except OSError:
-                pass
+                applog.silenced("apps._dir_size")
     return total
 
 

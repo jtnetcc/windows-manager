@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import platform
+import time
 from typing import NamedTuple
 
 from PySide6 import __version__ as PYSIDE_VERSION
@@ -26,10 +27,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core import config, version
+from core import applog, config, version
 
 from . import appicon, theme_dark as T
 from .components import Card, copy_text, font, label, open_url
+from core import applog
 
 APP_NAME = "Windows系统管家"
 TAGLINE = (
@@ -273,7 +275,7 @@ class AboutPage(QWidget):
         try:
             self.btn_update.clicked.disconnect()
         except (RuntimeError, TypeError):
-            pass
+            applog.silenced("page_about._check_update")
         from PySide6.QtCore import QUrl
         from PySide6.QtGui import QDesktopServices
 
@@ -422,8 +424,15 @@ class AboutPage(QWidget):
         btn_dir.setFixedHeight(28)
         btn_dir.setCursor(Qt.PointingHandCursor)
         btn_dir.clicked.connect(self._open_dir)
+        # 用户报问题时的唯一有效材料：环境摘要 + 日志尾部
+        btn_diag = QPushButton("导出诊断信息")
+        btn_diag.setObjectName("Ghost")
+        btn_diag.setFixedHeight(28)
+        btn_diag.setCursor(Qt.PointingHandCursor)
+        btn_diag.clicked.connect(self._export_diagnostics)
         actions.addWidget(btn_copy)
         actions.addWidget(btn_dir)
+        actions.addWidget(btn_diag)
         actions.addStretch(1)
         card.body().addLayout(actions)
         return card
@@ -463,3 +472,24 @@ class AboutPage(QWidget):
             os.startfile(str(config.config_dir()))  # noqa: S606
         except OSError:
             self.message.emit("打不开数据目录")
+
+    def _export_diagnostics(self) -> None:
+        """把环境摘要 + 日志尾部存成一个文件。
+
+        用户说「数字不对」时，这一段比让他描述十句都管用。文件落在数据目录，
+        路径同时复制到剪贴板，省得他截图给我看。
+        """
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        target = applog.log_path().parent / f"diagnostics-{stamp}.txt"
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(applog.diagnostics(version.text()), encoding="utf-8")
+        except OSError as exc:
+            self.message.emit(f"导出失败：{exc}")
+            return
+        copy_text(str(target))
+        self.message.emit(f"诊断信息已保存：{target.name}（路径已复制）")
+        try:
+            os.startfile(str(target.parent))  # noqa: S606
+        except OSError:
+            pass

@@ -22,6 +22,8 @@ import threading
 import time
 from dataclasses import dataclass
 
+from . import applog
+
 CREATE_NO_WINDOW = 0x08000000
 CACHE_SECONDS = 300.0
 
@@ -66,6 +68,12 @@ class Disk:
 
 _CACHE: tuple[float, list[Disk]] | None = None
 _LOCK = threading.Lock()
+# 上一次读取失败的原因；空串表示读到过（哪怕是读到 0 块盘）
+_last_error = ""
+
+
+def last_error() -> str:
+    return _last_error
 
 
 def _decode(raw: bytes) -> str:
@@ -78,6 +86,12 @@ def _decode(raw: bytes) -> str:
 
 
 def _run() -> str:
+    """跑一次 PowerShell。**失败返回空串并把原因记进 `last_error()`**。
+
+    空串本身没法区分「命令没跑起来」和「跑了但没盘」，所以另外记一份原因 ——
+    页面据此决定说「未检测到物理磁盘」还是「读取失败」。
+    """
+    global _last_error
     try:
         proc = subprocess.run(
             ["powershell", "-NoProfile", "-NonInteractive", "-Command", _SCRIPT],
@@ -86,8 +100,15 @@ def _run() -> str:
             timeout=25,
             creationflags=CREATE_NO_WINDOW,
         )
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, subprocess.SubprocessError) as exc:
+        _last_error = f"PowerShell 无法执行：{exc}"
+        applog.logger("diskinfo").warning("PowerShell 无法执行", exc_info=True)
         return ""
+    if proc.returncode != 0 and not proc.stdout:
+        _last_error = f"PowerShell 退出码 {proc.returncode}"
+        applog.logger("diskinfo").warning(_last_error)
+        return ""
+    _last_error = ""
     return _decode(proc.stdout)
 
 

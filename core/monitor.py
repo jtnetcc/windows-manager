@@ -8,6 +8,7 @@ from PySide6.QtCore import QThread, Signal
 
 from . import optimizer, winmem
 from .metrics import MetricsCollector
+from . import applog
 
 LEAK_WINDOW = 12          # 观察多少个采样点
 LEAK_MIN_GROWTH = 60 * winmem.MB
@@ -30,7 +31,8 @@ class MetricsSampler(QThread):
             try:
                 self.sampled.emit(self._collector.sample())
             except Exception:
-                pass
+                # 采样循环抛一次就少一帧；持续抛等于监控静默停摆，必须留 WARNING
+                applog.failed("monitor.MetricsSampler.run")
             self.msleep(self._interval)
 
     def set_interval(self, interval_ms: int) -> None:
@@ -91,7 +93,7 @@ class ProcessSampler(QThread):
                     leaks = self._tracker.update(rows)
                     self.sampled.emit(rows, leaks)
                 except Exception:
-                    pass
+                    applog.failed("monitor.ProcessSampler.run")
             self.msleep(self._interval)
 
     def pause(self) -> None:

@@ -41,6 +41,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import icons, theme_dark as T
+from core import applog
 
 
 def font(size: int, weight: QFont.Weight = QFont.Normal) -> QFont:
@@ -217,7 +218,7 @@ def reveal_file(path: str) -> None:
     try:
         subprocess.Popen(args)
     except OSError:
-        pass
+        applog.silenced("components.reveal_file")
 
 
 def open_folder(path: str) -> bool:

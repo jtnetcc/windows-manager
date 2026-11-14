@@ -27,6 +27,7 @@ import time
 from dataclasses import dataclass
 
 from .sysinfo import reg
+from . import applog
 
 CREATE_NO_WINDOW = 0x08000000
 
@@ -231,7 +232,7 @@ def _hardware_time() -> tuple[str, str]:
                 "OEM 出厂封装（sysprep）时间，主板固化的许可证即此时绑定",
             )
         except ValueError:
-            pass
+            applog.silenced("activation._hardware_time")
 
     # sysprep 记录被清掉时，出厂映像写入 ClipSVC 的时刻还在
     try:

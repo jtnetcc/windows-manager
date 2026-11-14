@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from .winpath import HKCU, HKLM, hive, system_drive
+from . import applog
 
 CREATE_NO_WINDOW = 0x08000000
 _SYSTEM32 = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "System32")
@@ -60,7 +61,7 @@ def reg_set(path: str, value: str, data) -> None:
             with winreg.OpenKey(hive(hive_name), sub, 0, winreg.KEY_SET_VALUE) as key:
                 winreg.DeleteValue(key, value)
         except FileNotFoundError:
-            pass
+            applog.silenced("slim.reg_set")
         return
     with winreg.CreateKeyEx(hive(hive_name), sub, 0, winreg.KEY_SET_VALUE) as key:
         winreg.SetValueEx(key, value, 0, winreg.REG_DWORD, int(data))
@@ -190,7 +191,7 @@ def _search_off() -> None:
     try:
         reg_set(_SEARCH_POLICY, "DisableSearchBoxSuggestions", 1)
     except PermissionError:
-        pass
+        applog.silenced("slim._search_off")
 
 
 def _search_on() -> None:
@@ -198,7 +199,7 @@ def _search_on() -> None:
     try:
         reg_set(_SEARCH_POLICY, "DisableSearchBoxSuggestions", None)
     except PermissionError:
-        pass
+        applog.silenced("slim._search_on")
 _suggestions = _flags(
     [
         (HKCU + "\\" + _CDM, "SubscribedContent-338388Enabled", 0),  # 开始菜单建议

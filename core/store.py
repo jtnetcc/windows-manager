@@ -75,6 +75,9 @@ class SpaceState:
 class StartupState:
     entries: list = field(default_factory=list)
     scanned_at: float = 0.0
+    # 哪个来源读失败了：{"task": "schtasks 无法执行…"}。空 = 三处都正常。
+    # 没有这个字段时，读失败和「确实没有」在界面上长得一模一样。
+    errors: dict = field(default_factory=dict)
 
     @property
     def enabled(self) -> int:
