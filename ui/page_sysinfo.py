@@ -10,11 +10,12 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
 
-from core import activation, sysinfo
+from core import activation, diskinfo, sysinfo
 from core.winmem import fmt_size
 
 from . import theme_dark as T
@@ -37,6 +38,11 @@ class InfoRow(QWidget):
         self.lbl_name.setVisible(bool(name))
         self.lbl_value = label(value or "—", 12, T.TEXT)
         self.lbl_value.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        # 值里可能出现 40 字符的 NVMe 序列号、整行 BIOS 版本号这类没有空格的
+        # 长串。QLabel 的 minimumSizeHint 按整段文本算，会把整列的宽度顶开，
+        # 小窗口下右侧那列直接被挤出可视区。设为 Ignored 让它只吃剩余空间，
+        # 放不下的部分裁掉，完整内容在 tooltip 里。
+        self.lbl_value.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         if value:
             self.lbl_value.setToolTip(value)
 
@@ -59,13 +65,19 @@ class SysInfoPage(QWidget):
     # 用普通线程 + 队列信号回传：QThread 在换肤重建时被析构会崩，
     # Python 线程不是 QObject，页面没了信号自然没人接，不用额外收尾。
     activation_ready = Signal(object)
+    storage_ready = Signal(object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._info: sysinfo.SysInfo | None = None
+        self._started = False
         self._activation: activation.ActivationInfo | None = None
         self._activation_loading = False
+        self._disks: list = []
+        self._storage_loading = False
+        self._storage_done = False
         self.activation_ready.connect(self._on_activation)
+        self.storage_ready.connect(self._on_storage)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -89,7 +101,9 @@ class SysInfoPage(QWidget):
             self._title("系统", "info")
         )
         self.row_os = self._add_rows(
-            self.card_os, ["版本", "版本号", "架构", "安装日期", "计算机名", "当前用户"]
+            self.card_os,
+            ["版本", "版本号", "架构", "安装日期", "整机型号", "整机序列号",
+             "计算机名", "当前用户"],
         )
         self.card_os.body().addStretch(1)
         grid.addWidget(self.card_os, 0, 0)
@@ -123,25 +137,29 @@ class SysInfoPage(QWidget):
         self.card_board = Card(padding=14, spacing=2)
         self.card_board.body().addWidget(self._title("主板与固件", "disk"))
         self.row_board = self._add_rows(
-            self.card_board, ["主板厂商", "主板型号", "BIOS", "BIOS 日期"]
+            self.card_board, ["主板厂商", "主板型号", "主板序列号", "BIOS", "BIOS 日期"]
         )
         self.card_board.body().addStretch(1)
         grid.addWidget(self.card_board, 1, 1)
 
-        # -- 显卡
-        self.card_gpu = Card(padding=14, spacing=2)
-        self.card_gpu.body().addWidget(self._title("显卡", "app"))
-        self.gpu_box = QVBoxLayout()
-        self.gpu_box.setSpacing(2)
-        self.card_gpu.body().addLayout(self.gpu_box)
-        self.card_gpu.body().addStretch(1)
-        grid.addWidget(self.card_gpu, 2, 0)
+        # -- 存储设备：每块盘两行（型号+容量 / 序列号·固件·通电），后台填充
+        self.card_disk = Card(padding=14, spacing=2)
+        self.card_disk.body().addWidget(self._title("存储设备", "disk"))
+        self.disk_box = QVBoxLayout()
+        self.disk_box.setSpacing(6)
+        self.card_disk.body().addLayout(self.disk_box)
+        self.card_disk.body().addStretch(1)
+        grid.addWidget(self.card_disk, 2, 0)
 
-        # -- 显示与网络
+        # -- 显示与网络：显卡并进来（原来是独立一张卡，只有一行，
+        # 却占掉整格高度，右下角大片空白）
         self.card_net = Card(padding=14, spacing=2)
         self.card_net.body().addWidget(self._title("显示与网络", "network"))
+        self.gpu_box = QVBoxLayout()
+        self.gpu_box.setSpacing(2)
+        self.card_net.body().addLayout(self.gpu_box)
         self.row_net = self._add_rows(
-            self.card_net, ["分辨率", "显示器", "IP 地址", "MAC 地址", "主机名"]
+            self.card_net, ["分辨率", "显示器", "IP 地址", "MAC 地址"]
         )
         self.card_net.body().addStretch(1)
         grid.addWidget(self.card_net, 2, 1)
@@ -198,11 +216,83 @@ class SysInfoPage(QWidget):
 
     # ---------------------------------------------------------- 数据
 
+    def showEvent(self, event) -> None:
+        """第一次显示就把数据填上。
+
+        不走主窗口的 LAZY_STARTERS：那条路是 `QTimer.singleShot(0, page, …)`，
+        换肤重建后实测有约 1/3 概率没落地，页面停在全横杠状态（连「版本」
+        都是空的）。showEvent 是 QStackedWidget 切页时同步发出的，不会丢。
+        """
+        super().showEvent(event)
+        if not self._started:
+            self._started = True
+            self.refresh()
+
     def refresh(self) -> None:
         info = sysinfo.collect()
         self._info = info
         self._render(info)
         self._load_activation()
+        self._load_storage()
+
+    # ---------------------------------------------------------- 存储
+
+    def _load_storage(self) -> None:
+        if self._storage_done:
+            self._render_storage(self._disks)
+            return
+        if self._storage_loading:
+            return
+        self._storage_loading = True
+        self._render_storage([])
+        threading.Thread(target=self._fetch_storage, daemon=True).start()
+
+    def _fetch_storage(self) -> None:
+        try:
+            disks = diskinfo.inventory()
+        except Exception:
+            disks = []
+        try:
+            self.storage_ready.emit(disks)
+        except RuntimeError:
+            pass
+
+    def _on_storage(self, disks: list) -> None:
+        self._storage_loading = False
+        self._storage_done = True
+        self._disks = disks
+        self._render_storage(disks)
+
+    def _render_storage(self, disks: list) -> None:
+        for index in reversed(range(self.disk_box.count())):
+            widget = self.disk_box.itemAt(index).widget()
+            if widget is not None:
+                widget.deleteLater()
+
+        if not disks:
+            hint = "读取中…" if self._storage_loading else "未检测到物理磁盘"
+            self.disk_box.addWidget(InfoRow("", hint))
+            return
+
+        for disk in disks:
+            head = f"{disk.model} · {fmt_size(disk.size)}"
+            if disk.media_text:
+                head += f" · {disk.media_text}"
+            self.disk_box.addWidget(InfoRow(f"磁盘 {disk.index}", head, width=60))
+
+            bits = [f"序列号 {disk.serial or '—'}"]
+            if disk.firmware:
+                bits.append(f"固件 {disk.firmware}")
+            bits.append(f"通电 {disk.hours_text}")
+            detail = InfoRow("", " · ".join(bits))
+            detail.set_color(T.TEXT_DIM)
+            if disk.hours is None:
+                detail.lbl_value.setToolTip(
+                    "NVMe 盘的通电时间 Windows 不上报，与权限无关"
+                )
+            else:
+                detail.lbl_value.setToolTip(" · ".join(bits))
+            self.disk_box.addWidget(detail)
 
     # ---------------------------------------------------------- 激活
 
@@ -272,6 +362,8 @@ class SysInfoPage(QWidget):
         )
         self.row_os["架构"].set_value(info.architecture)
         self.row_os["安装日期"].set_value(info.install_date)
+        self.row_os["整机型号"].set_value(info.system_model)
+        self.row_os["整机序列号"].set_value(info.system_serial)
         self.row_os["计算机名"].set_value(info.hostname)
         self.row_os["当前用户"].set_value(info.username)
 
@@ -308,6 +400,7 @@ class SysInfoPage(QWidget):
 
         self.row_board["主板厂商"].set_value(info.board_vendor)
         self.row_board["主板型号"].set_value(info.board_model)
+        self.row_board["主板序列号"].set_value(info.board_serial)
         self.row_board["BIOS"].set_value(info.bios_version or info.bios_vendor)
         self.row_board["BIOS 日期"].set_value(info.bios_date)
 
@@ -325,4 +418,4 @@ class SysInfoPage(QWidget):
         self.row_net["显示器"].set_value(f"{info.monitors} 台" if info.monitors else "")
         self.row_net["IP 地址"].set_value(info.ip)
         self.row_net["MAC 地址"].set_value(info.mac)
-        self.row_net["主机名"].set_value(info.hostname)
+        # 「主机名」原来和上面「计算机名」是同一个值（都是 gethostname），删掉一处

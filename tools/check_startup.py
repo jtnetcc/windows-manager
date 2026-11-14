@@ -149,11 +149,11 @@ def main() -> int:
 
     def wait_activation(win, deadline: float) -> None:
         page = win._pages.get("sysinfo")
-        if page is not None and page._activation_loading:
+        if page is not None and (page._activation_loading or page._storage_loading):
             if time.monotonic() < deadline:
                 QTimer.singleShot(300, lambda: wait_activation(win, deadline))
                 return
-            raise AssertionError("激活信息 25 秒没回来")
+            raise AssertionError("激活或存储信息 25 秒没回来")
         activation_card(win)
 
     def activation_card(win) -> None:
@@ -172,6 +172,16 @@ def main() -> int:
         assert status not in ("", "读取中…", "—"), f"激活状态没填：{status}"
         print(f"系统信息激活卡 ✓（{status} · {info.system_time} · "
               f"硬件 {info.hardware_time or '无记录'}）")
+
+        # 存储设备：每块盘两行，卡里行数必须对得上
+        assert page._disks, "存储设备没读出来"
+        assert page.disk_box.count() >= len(page._disks) * 2, "存储设备卡行数不对"
+        assert page.row_board["主板序列号"].lbl_value.text() != "读取中…"
+        # 显卡已并进「显示与网络」，主机名与「计算机名」重复、已删
+        assert "主机名" not in page.row_net, "重复的「主机名」又加回去了"
+        hours = [d.hours_text for d in page._disks]
+        print(f"存储设备 {len(page._disks)} 块 ✓（{page._disks[0].model} · "
+              f"通电 {hours[0]}）")
 
         win.switch_page("monitor")
         app.processEvents()

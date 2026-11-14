@@ -119,7 +119,8 @@ NAV_FOOT = [
 # 的表现是「换肤重建后那页空着」，只有走特定路径才复现。现在只有这一份。
 LAZY_STARTERS = {
     "software": "refresh",
-    "sysinfo": "refresh",
+    # 系统信息不在这里：它的首次加载挂在 SysInfoPage.showEvent 上。
+    # 走单发定时器换肤后约有 1/3 概率不落地，页面停在全横杠状态。
     "appclean": "start_scan",
     "slim": "start_scan",
     "health": "start_probe",

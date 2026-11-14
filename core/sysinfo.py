@@ -165,6 +165,9 @@ class SysInfo:
     # 主板 / BIOS
     board_vendor: str = ""
     board_model: str = ""
+    board_serial: str = ""
+    system_model: str = ""
+    system_serial: str = ""
     bios_vendor: str = ""
     bios_version: str = ""
     bios_date: str = ""
@@ -197,12 +200,15 @@ def _parse_smbios(info: SysInfo) -> None:
                 info.bios_vendor = _pick(strings, data[4])
                 info.bios_version = _pick(strings, data[5])
                 info.bios_date = _pick(strings, data[8])
-            elif stype == 1 and len(data) >= 6:  # System
+            elif stype == 1 and len(data) >= 8:  # System
                 if not info.board_vendor:
                     info.board_vendor = _pick(strings, data[4])
-            elif stype == 2 and len(data) >= 6:  # Baseboard
+                info.system_model = _pick(strings, data[5])
+                info.system_serial = _pick(strings, data[7])
+            elif stype == 2 and len(data) >= 8:  # Baseboard
                 info.board_vendor = _pick(strings, data[4])
                 info.board_model = _pick(strings, data[5])
+                info.board_serial = _pick(strings, data[7])
             elif stype == 4 and len(data) >= 0x26:  # Processor
                 info.cpu_manufacturer = _pick(strings, data[7])
                 version = _pick(strings, data[0x10])
