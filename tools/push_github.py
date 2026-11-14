@@ -14,7 +14,10 @@ Token 需要 `repo` 权限。脚本不会把 token 写进任何文件。
 
 注意：
 - 只推送 `git ls-files` 列出的文件（受 .gitignore 约束）
-- 中文路径要关掉 `core.quotepath`，否则会变成 `\\350\\260\\203` 这种转义
+- 内容取自**暂存区**（`git cat-file blob :path`），不是磁盘：改完先 `git add` 再推，
+  否则推上去的是上一次暂存的样子
+- 默认建全新树，本地删掉的文件会一起从远端删掉；要保留用 `--keep-stale`
+- 中文路径要关掉 `core.quotepath`，否则会变成 `\350\260\203` 这种转义
 - 空仓库要先有一次提交，blob API 在空仓库上返回 409
 """
 
@@ -68,6 +71,15 @@ class GitHub:
             return None, None
         return sha, commit["tree"]["sha"]
 
+    def paths(self, tree_sha: str) -> set[str]:
+        """远端树里的全部文件路径，用来找「本地已删、远端还在」的残留。"""
+        status, tree = self.call(
+            "GET", f"{self.api}/git/trees/{tree_sha}?recursive=1"
+        )
+        if status != 200:
+            return set()
+        return {item["path"] for item in tree.get("tree", []) if item.get("type") == "blob"}
+
 
 def local_files() -> list[str]:
     """工作区里被 git 跟踪的文件。关掉 quotepath 保住中文路径。"""
@@ -85,6 +97,11 @@ def main() -> int:
     parser.add_argument("-m", "--message", default="", help="提交信息")
     parser.add_argument("--dry-run", action="store_true", help="只列文件，不真推")
     parser.add_argument("--jobs", type=int, default=6, help="并发上传数")
+    parser.add_argument(
+        "--keep-stale",
+        action="store_true",
+        help="保留远端有、本地已删除的文件（默认把它们一起删掉）",
+    )
     args = parser.parse_args()
 
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
@@ -101,6 +118,16 @@ def main() -> int:
     head_sha, base_tree = gh.head()
     print(f"仓库 {args.repo}｜本地 {len(files)} 个文件")
     print(f"远端当前提交：{head_sha[:10] if head_sha else '（空仓库）'}")
+
+    # 远端有、本地没有的文件。原来用 base_tree 增量更新，这类文件永远删不掉：
+    # 本地删了 core/social.py，远端还挂着，看起来像「仓库里还有这份代码」。
+    stale = sorted(gh.paths(base_tree) - set(files)) if base_tree else []
+    if stale and not args.keep_stale:
+        print(f"远端残留 {len(stale)} 个本地已删除的文件，本次一并清掉：")
+        for name in stale[:10]:
+            print("   -", name)
+        if len(stale) > 10:
+            print(f"   … 还有 {len(stale) - 10} 个")
 
     if args.dry_run:
         for name in files[:20]:
@@ -149,7 +176,9 @@ def main() -> int:
         for path, sha in blobs
     ]
     payload = {"tree": entries}
-    if base_tree:
+    # 只在显式要求保留残留时挂 base_tree；默认建一棵全新的树，内容严格等于
+    # `git ls-files`，删除才会真的同步过去。
+    if base_tree and args.keep_stale:
         payload["base_tree"] = base_tree
     status, tree = gh.call("POST", f"{gh.api}/git/trees", payload)
     if status != 201:
