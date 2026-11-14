@@ -371,11 +371,6 @@ class Layout:
     def single(self) -> bool:
         return len(self.fixed) <= 1
 
-    @property
-    def has_target(self) -> bool:
-        """有没有能承接数据的第二个盘（另一块固定盘或 U 盘）。"""
-        return len(self.fixed) > 1 or bool(self.removable)
-
     def other_targets(self) -> list[str]:
         return [p for p in self.fixed if p.rstrip("\\") != self.system_drive.rstrip("\\")] + \
             self.removable

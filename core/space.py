@@ -37,9 +37,6 @@ class SpaceResult:
     def percent(self) -> float:
         return self.used / self.total * 100 if self.total else 0.0
 
-    def categories(self) -> dict[str, int]:
-        return dirstat.summarize(self.root, self.used)
-
 
 def _usage(root: str) -> tuple[int, int]:
     try:

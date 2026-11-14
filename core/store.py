@@ -145,8 +145,8 @@ class Store(QObject):
         elif task_id == "bigfile":
             self.bigfile = result
             self.bigfile_changed.emit()
-        elif task_id in ("startup", "tasks"):
-            # 两个页面读的是同一份启动项数据，共用一个状态字段
+        elif task_id == "startup":
+            # 启动项与计划任务已合并成一页，共用这一份状态
             self.startup = result
             self.startup_changed.emit()
         elif task_id == "software":

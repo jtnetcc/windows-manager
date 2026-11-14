@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import threading
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QScrollArea,
-    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -19,7 +18,76 @@ from core import activation, diskinfo, sysinfo
 from core.winmem import fmt_size
 
 from . import theme_dark as T
-from .components import Card, label
+from .components import Card, ElidedLabel, label
+
+
+class _DiskBlock(QWidget):
+    """一块物理盘：型号 / 规格 / 序列号，三行。
+
+    原来是两行 —— 「型号 · 容量 · 介质」和「序列号 · 固件 · 通电」。值一长就被
+    QLabel 硬裁，右边半个字都不剩，看着像没加载完。拆成三行之后每行都短，
+    窄窗口也不会断；真放不下时还有省略号和完整提示框兜底。
+    """
+
+    # 「磁盘 0」实测 33px，"磁盘 10" 39px；40 是能放下又不浪费的最小值，
+    # 序列号那行就靠省下来的这 20px 才不用画省略号
+    TAG_W = 40
+
+    def __init__(self, disk: diskinfo.Disk, parent=None):
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 5, 0, 5)
+        layout.setSpacing(0)
+
+        head = QHBoxLayout()
+        head.setContentsMargins(0, 0, 0, 0)
+        # 和下面两行的缩进保持一致（TAG_W + 4），否则型号和副信息差半个字
+        head.setSpacing(4)
+        tag = label(f"磁盘 {disk.index}", 12, T.TEXT_DIM)
+        tag.setFixedWidth(self.TAG_W)
+        head.addWidget(tag)
+        head.addWidget(
+            ElidedLabel(disk.model or "未知型号", 12, T.TEXT, QFont.Medium), 1
+        )
+        layout.addLayout(head)
+
+        # 规格：容量、介质、总线、固件、通电，按「先硬件后寿命」排。
+        # 通电时间拿不到时（NVMe 系统不上报）整段省掉 —— 挂一个「通电 —」
+        # 既占地方又像读取失败。
+        spec = [fmt_size(disk.size)]
+        if disk.media_text:
+            spec.append(disk.media_text)
+        if disk.bus:
+            spec.append(disk.bus)
+        if disk.firmware:
+            spec.append(f"固件 {disk.firmware}")
+        if disk.hours is not None:
+            spec.append(f"通电 {disk.hours_text}")
+        spec_row = ElidedLabel(" · ".join(spec), 11, T.TEXT_SUB)
+        if disk.hours is None:
+            spec_row.setToolTip(
+                " · ".join(spec) + "\n这块盘的通电时间系统不上报（NVMe 常见），与权限无关"
+            )
+        layout.addLayout(self._indented(spec_row))
+
+        # 序列号用等宽 10px：36 位串在窄窗口也能整行放下，不用省略号
+        serial = ElidedLabel(
+            f"SN {disk.serial or '—'}", 10, T.TEXT_DIM, use_mono=True
+        )
+        layout.addLayout(self._indented(serial))
+
+    def _indented(self, widget: QWidget) -> QHBoxLayout:
+        """左侧空出标签列宽度，让副信息对齐型号。
+
+        间距取 4（而不是 10）：36 位序列号在 980 宽的最小窗口里只差这么点，
+        缩进多给 6px 就得画省略号。
+        """
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(0)
+        row.addSpacing(self.TAG_W + 4)
+        row.addWidget(widget, 1)
+        return row
 
 
 class InfoRow(QWidget):
@@ -36,15 +104,11 @@ class InfoRow(QWidget):
         # 没有标签名（比如显卡列表）时不占列宽，值直接从左边开始
         self.lbl_name.setFixedWidth(width if name else 0)
         self.lbl_name.setVisible(bool(name))
-        self.lbl_value = label(value or "—", 12, T.TEXT)
-        self.lbl_value.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        # 值里可能出现 40 字符的 NVMe 序列号、整行 BIOS 版本号这类没有空格的
-        # 长串。QLabel 的 minimumSizeHint 按整段文本算，会把整列的宽度顶开，
-        # 小窗口下右侧那列直接被挤出可视区。设为 Ignored 让它只吃剩余空间，
-        # 放不下的部分裁掉，完整内容在 tooltip 里。
-        self.lbl_value.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
-        if value:
-            self.lbl_value.setToolTip(value)
+        # 值里会出现 40 字符的 NVMe 序列号、整行 BIOS 型号这类没有空格的长串。
+        # 用 ElidedLabel 而不是 QLabel：QLabel 放不下就直接裁掉，右边半个字都
+        # 不剩，看着像没加载完；而且它的 minimumSizeHint 按整段文本算，
+        # 一个长串就能把整列顶宽，小窗口下右边那列被挤出可视区。
+        self.lbl_value = ElidedLabel(value or "—", 12, T.TEXT)
 
         layout.addWidget(self.lbl_name, 0)
         layout.addWidget(self.lbl_value, 1)
@@ -55,9 +119,7 @@ class InfoRow(QWidget):
         self.lbl_value.setToolTip(text if value else "")
 
     def set_color(self, color: str) -> None:
-        self.lbl_value.setStyleSheet(
-            f"color: {color}; background: transparent; border: none;"
-        )
+        self.lbl_value.set_color(color)
 
 
 class SysInfoPage(QWidget):
@@ -275,24 +337,7 @@ class SysInfoPage(QWidget):
             return
 
         for disk in disks:
-            head = f"{disk.model} · {fmt_size(disk.size)}"
-            if disk.media_text:
-                head += f" · {disk.media_text}"
-            self.disk_box.addWidget(InfoRow(f"磁盘 {disk.index}", head, width=60))
-
-            bits = [f"序列号 {disk.serial or '—'}"]
-            if disk.firmware:
-                bits.append(f"固件 {disk.firmware}")
-            bits.append(f"通电 {disk.hours_text}")
-            detail = InfoRow("", " · ".join(bits))
-            detail.set_color(T.TEXT_DIM)
-            if disk.hours is None:
-                detail.lbl_value.setToolTip(
-                    "NVMe 盘的通电时间 Windows 不上报，与权限无关"
-                )
-            else:
-                detail.lbl_value.setToolTip(" · ".join(bits))
-            self.disk_box.addWidget(detail)
+            self.disk_box.addWidget(_DiskBlock(disk))
 
     # ---------------------------------------------------------- 激活
 

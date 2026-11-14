@@ -105,11 +105,14 @@ def _parse(text: str) -> list[Disk]:
         if size <= 0:
             continue  # 离线/虚拟盘，没有容量就没有展示价值
         hours = parts[7].strip()
+        # 部分 NVMe 盘（这台机器的 WDC 就是）序列号末尾带一个句点，
+        # 是盘自己上报的，不是解析错。留着像打错字，去掉也不丢信息。
+        serial = parts[2].strip().rstrip(".")
         disks.append(
             Disk(
                 index=parts[0].strip(),
                 model=parts[1].strip(),
-                serial=parts[2].strip(),
+                serial=serial,
                 firmware=parts[3].strip(),
                 size=size,
                 media=parts[5].strip(),

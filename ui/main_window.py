@@ -59,7 +59,7 @@ from core.store import Store
 from core.task import TaskCenter
 
 from . import appicon, icons, theme_dark as T, tooltip
-from .components import NavButton, label
+from .components import Hairline, NavButton, Vitals, label, mono_label
 from .feed import feed
 
 # 十四个页面模块不再在这里导入：启动只建首屏那一页，模块也跟着按需加载
@@ -93,8 +93,9 @@ NAV_GROUPS = [
     (
         "管理",
         [
+            # 计划任务原来单独一页，读的是 startup 的同一份数据、写同一个
+            # store 字段，扫描还会互相覆盖。已并入「开机启动」的分段里。
             ("startup", "开机启动", "power"),
-            ("tasks", "计划任务", "calendar"),
             ("slim", "系统瘦身", "slim"),
             ("software", "软件管理", "app"),
             ("registry", "注册表项", "tree"),
@@ -118,16 +119,18 @@ NAV_FOOT = [
 # LAZY_FLAGS 元组、switch_page 里九段 if。加一个页面要改三处，漏掉第三处
 # 的表现是「换肤重建后那页空着」，只有走特定路径才复现。现在只有这一份。
 LAZY_STARTERS = {
-    "software": "refresh",
+    # 软件页现在是两段式容器，对外只暴露 start_scan（分派给当前分段）
+    "software": "start_scan",
     # 系统信息不在这里：它的首次加载挂在 SysInfoPage.showEvent 上。
     # 走单发定时器换肤后约有 1/3 概率不落地，页面停在全横杠状态。
     "appclean": "start_scan",
     "slim": "start_scan",
     "health": "start_probe",
     "recycle": "start_scan",
-    "tasks": "start_scan",
     "registry": "start_scan",
-    "startup": "start_scan",
+    # 有缓存就先渲染、没有才扫：换肤重建时任务可能还在跑，
+    # 直接 start_scan 会被 is_busy 挡回来，页面就停在空表上
+    "startup": "ensure_scan",
 }
 
 # 侧栏顺序就是导航顺序：标题、图标、快捷键全从这两张表派生。
@@ -137,6 +140,14 @@ NAV_ITEMS += [(key, text) for key, text, _ in NAV_FOOT]
 PAGE_TITLES = dict(NAV_ITEMS)
 PAGE_ICONS = {key: icon for _, items in NAV_GROUPS for key, _, icon in items}
 PAGE_ICONS.update({key: icon for key, _, icon in NAV_FOOT})
+
+
+def _nav_index(key: str) -> int:
+    """页面在导航里的序号，给标题带的通道号用（从 1 开始）。"""
+    for index, (item, _text) in enumerate(NAV_ITEMS):
+        if item == key:
+            return index + 1
+    return 0
 
 
 def _current_user() -> str:
@@ -162,9 +173,8 @@ PAGE_SUBS = {
     "bigfile": "系统盘空间去哪了，以及哪些能回收",
     "recycle": "回收站内容一览，按体积排序，可还原或清空",
     "startup": "开机自启的注册表项、快捷方式与计划任务",
-    "tasks": "任务计划程序里的第三方任务，可启用或禁用",
     "registry": "卸载残留、启动项、App Paths 与 COM 组件的失效条目",
-    "software": "已安装程序与卸载入口",
+    "software": "已安装程序与卸载残留",
     "settings": "外观、监控、告警与启动",
     "about": "免费开源 · 版本与运行环境",
 }
@@ -378,6 +388,12 @@ class MainWindow(QMainWindow):
         # 记在这里才能在下次建出来时回到原来的分段。
         self._monitor_segment = "overview"
         self._space_segment = "analysis"
+        self._startup_segment = "all"
+        self._software_segment = "installed"
+        # 侧栏收起状态。换肤会整页重建，所以存在实例上而不是控件上
+        self._sidebar_collapsed = bool(settings.sidebar_collapsed)
+        self._group_labels: list[QWidget] = []
+        self._host_widgets: list[QWidget] = []
 
         self.setWindowTitle(f"Windows系统管家 {version.text()}")
         self.resize(1100, 720)
@@ -487,10 +503,16 @@ class MainWindow(QMainWindow):
         if old is not None:
             old.deleteLater()
 
+    def _sidebar_width(self) -> int:
+        return (
+            T.SIDEBAR_WIDTH_COMPACT if self._sidebar_collapsed else T.SIDEBAR_WIDTH
+        )
+
     def _build_sidebar(self) -> QWidget:
         side = QWidget()
         side.setObjectName("Sidebar")
-        side.setFixedWidth(T.SIDEBAR_WIDTH)
+        self._side = side
+        side.setFixedWidth(self._sidebar_width())
         side.setStyleSheet(
             f"#Sidebar {{ background: {T.SIDEBAR};"
             f" border-right: 1px solid {T.BORDER}; }}"
@@ -503,12 +525,15 @@ class MainWindow(QMainWindow):
         # 标题栏已经写着「Windows系统管家 · 版本」，侧栏再说一遍只是重复。
         # 这一行改成「这台机器」：主机名 + 登录用户，给顶部一点有用的上下文。
         host_row = QWidget()
+        self._host_row = host_row
         host_row.setFixedHeight(40)
         host_layout = QHBoxLayout(host_row)
+        self._host_layout = host_layout
         host_layout.setContentsMargins(18, 0, 16, 0)
         host_layout.setSpacing(7)
 
         dot = QLabel()
+        self._host_dot = dot
         dot.setFixedSize(8, 8)
         dot.setStyleSheet(f"background: {T.ACCENT}; border-radius: 4px;")
         host_layout.addWidget(dot)
@@ -516,23 +541,43 @@ class MainWindow(QMainWindow):
         host = (platform.node() or "").strip() or "本机"
         user = _current_user()
         host_label = label(host, 12, T.TEXT_DIM, QFont.Medium)
+        self._host_label = host_label
         # 主机名动辄 DESKTOP-8FJ2K9A，侧栏放不下，先按可用宽度省略
         host_label.setText(
             host_label.fontMetrics().elidedText(
-                host, Qt.ElideRight, T.SIDEBAR_WIDTH - 62
+                host, Qt.ElideRight, T.SIDEBAR_WIDTH - 90
             )
         )
         host_layout.addWidget(host_label, 1)
+
+        # 收起 / 展开。放在标题行右端：这是「侧栏自己的开关」，
+        # 挂在底部会让人以为它属于权限那一块。
+        self._btn_collapse = QPushButton()
+        self._btn_collapse.setObjectName("Ghost")
+        self._btn_collapse.setFixedSize(22, 22)
+        self._btn_collapse.setCursor(Qt.PointingHandCursor)
+        self._btn_collapse.setStyleSheet(
+            f"QPushButton {{ background: transparent; border: none;"
+            f" color: {T.TEXT_DIM}; font-size: 15px; padding: 0; }}"
+            f"QPushButton:hover {{ background: {T.HOVER};"
+            f" color: {T.TEXT}; border-radius: 4px; }}"
+        )
+        self._btn_collapse.clicked.connect(self._toggle_sidebar)
+        host_layout.addWidget(self._btn_collapse, 0, Qt.AlignVCenter)
+
         host_row.setToolTip(f"{host}\n{user} · 当前用户" if user else host)
         layout.addWidget(host_row)
         layout.addSpacing(6)
 
+        self._group_labels.clear()
         for index, (group, items) in enumerate(NAV_GROUPS):
             # 每组前面一个小标题。原来只画一条 1px 细线、不写字，等于把分组
             # 信息丢了 —— 十二个入口平铺下来，找东西全靠逐行读。
             if index:
                 layout.addSpacing(4)
-            layout.addWidget(self._nav_group_label(group))
+            group_label = self._nav_group_label(group)
+            self._group_labels.append(group_label)
+            layout.addWidget(group_label)
             for key, text, icon in items:
                 button = NavButton(key, text, self.switch_page, icon)
                 layout.addWidget(button)
@@ -541,7 +586,8 @@ class MainWindow(QMainWindow):
         layout.addStretch(1)
 
         # 底部固定区：系统信息 + 偏好设置 + 权限徽标，和主分组用一条细线隔开
-        layout.addWidget(self._nav_divider())
+        self._nav_divider_widget = self._nav_divider()
+        layout.addWidget(self._nav_divider_widget)
         for key, text, icon in NAV_FOOT:
             button = NavButton(key, text, self.switch_page, icon)
             layout.addWidget(button)
@@ -549,6 +595,7 @@ class MainWindow(QMainWindow):
         layout.addSpacing(6)
 
         admin_wrap = QWidget()
+        self._admin_wrap = admin_wrap
         admin_layout = QVBoxLayout(admin_wrap)
         admin_layout.setContentsMargins(10, 0, 10, 0)
         self.btn_admin = QPushButton()
@@ -558,8 +605,41 @@ class MainWindow(QMainWindow):
         admin_layout.addWidget(self.btn_admin)
         layout.addWidget(admin_wrap)
         self._refresh_admin_badge()
+        self._apply_sidebar_state()
 
         return side
+
+    def _toggle_sidebar(self) -> None:
+        self._sidebar_collapsed = not self._sidebar_collapsed
+        self._apply_sidebar_state()
+        self.settings.sidebar_collapsed = self._sidebar_collapsed
+        try:
+            self.settings.save()
+        except Exception:
+            # 配置写不进去不该拦着用户用界面，下次启动回到展开态而已
+            pass
+
+    def _apply_sidebar_state(self) -> None:
+        """按当前状态调整侧栏宽度、图标轨道和各处可见性。"""
+        collapsed = self._sidebar_collapsed
+        self._side.setFixedWidth(self._sidebar_width())
+        for button in self._nav.values():
+            button.set_compact(collapsed)
+        for item in self._group_labels:
+            item.setVisible(not collapsed)
+        self._host_label.setVisible(not collapsed)
+        self._host_dot.setVisible(not collapsed)
+        self._nav_divider_widget.setVisible(not collapsed)
+        # 权限徽标是一整行文字，收起态放不下，展开再说
+        self._admin_wrap.setVisible(not collapsed and not winmem.is_admin())
+        self._btn_collapse.setText("›" if collapsed else "‹")
+        self._btn_collapse.setToolTip("展开侧栏" if collapsed else "收起侧栏")
+        if collapsed:
+            self._host_layout.setContentsMargins(0, 0, 0, 0)
+            self._host_layout.setAlignment(Qt.AlignCenter)
+        else:
+            self._host_layout.setContentsMargins(18, 0, 16, 0)
+            self._host_layout.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
     @staticmethod
     def _nav_divider() -> QWidget:
@@ -597,30 +677,47 @@ class MainWindow(QMainWindow):
         wrap = QWidget()
         wrap.setObjectName("PageArea")
         layout = QVBoxLayout(wrap)
-        layout.setContentsMargins(24, 16, 24, 18)
-        layout.setSpacing(12)
+        layout.setContentsMargins(24, 12, 24, 16)
+        layout.setSpacing(9)
 
         top = QHBoxLayout()
         top.setSpacing(0)
+
+        # 左边这条是「通道号」：每页一个固定编号。切页时不用读标题也知道
+        # 走到第几块，同时给所有页面的标题一个共同的左边界。
+        gutter = QVBoxLayout()
+        gutter.setContentsMargins(0, 0, 0, 0)
+        gutter.setSpacing(0)
+        gutter.addSpacing(4)
+        self.lbl_index = mono_label("01", 10, T.TEXT_DIM)
+        gutter.addWidget(self.lbl_index, 0, Qt.AlignLeft)
+        gutter.addStretch(1)
+        top.addLayout(gutter)
+        top.addSpacing(8)
+
         title_box = QVBoxLayout()
         title_box.setContentsMargins(0, 0, 0, 0)
         title_box.setSpacing(1)
-        self.lbl_title = label("概览", 26, T.TEXT, QFont.DemiBold)
-        self.lbl_sub = label("", 12, T.TEXT_DIM)
+        self.lbl_title = label("概览", 19, T.TEXT, QFont.DemiBold)
+        self.lbl_sub = label("", 11, T.TEXT_DIM)
         title_box.addWidget(self.lbl_title)
         title_box.addWidget(self.lbl_sub)
         top.addLayout(title_box)
-        top.addStretch(1)
 
-        self.lbl_task = label("", 12, T.ACCENT)
-        top.addWidget(self.lbl_task, 0, Qt.AlignBottom)
-        top.addSpacing(14)
+        # 常驻体征：任何页面都能看到机器现在什么样，不用跳回监控页
+        self.vitals = Vitals()
+        top.addWidget(self.vitals, 1)
+        top.addSpacing(12)
+
+        self.lbl_task = label("", 11, T.ACCENT)
+        top.addWidget(self.lbl_task, 0, Qt.AlignVCenter)
+        top.addSpacing(12)
 
         # 「可释放 X」做成按钮而不是纯文字：之前它只显示「尚未扫描」，
         # 用户不知道这是干嘛的，也不能点。
         self.btn_reclaim = QPushButton()
         self.btn_reclaim.setObjectName("Ghost")
-        self.btn_reclaim.setFixedHeight(30)
+        self.btn_reclaim.setFixedHeight(28)
         self.btn_reclaim.setCursor(Qt.PointingHandCursor)
         self.btn_reclaim.clicked.connect(self._on_reclaim_clicked)
 
@@ -632,30 +729,33 @@ class MainWindow(QMainWindow):
         reclaim_row.setSpacing(8)
         reclaim_row.addWidget(self.btn_reclaim)
         divider = QFrame()
-        divider.setFixedSize(1, 15)
-        divider.setStyleSheet(f"background: {T.BORDER_STRONG};")
+        divider.setFixedSize(1, 14)
+        divider.setStyleSheet(f"background: {T.panel_edge()};")
         reclaim_row.addWidget(divider, 0, Qt.AlignVCenter)
         self._header_divider = divider
         self._reclaim_box.hide()
-        top.addWidget(self._reclaim_box, 0, Qt.AlignBottom)
+        top.addWidget(self._reclaim_box, 0, Qt.AlignVCenter)
 
         self.btn_power = QPushButton("强力模式")
         self.btn_power.setObjectName("Ghost")
-        self.btn_power.setFixedHeight(30)
+        self.btn_power.setFixedHeight(28)
         self.btn_power.setCursor(Qt.PointingHandCursor)
         self.btn_power.clicked.connect(self._open_power_mode)
-        top.addWidget(self.btn_power, 0, Qt.AlignBottom)
+        top.addWidget(self.btn_power, 0, Qt.AlignVCenter)
         top.addSpacing(6)
 
         # 全局动作只给「柔和版」主按钮：页面自己的主按钮才是这一屏的唯一实心蓝，
         # 否则两行按钮各压一个蓝块，看起来像表格里的两列
         self.btn_optimize = QPushButton("一键优化")
         self.btn_optimize.setObjectName("Tonal")
-        self.btn_optimize.setFixedHeight(30)
+        self.btn_optimize.setFixedHeight(28)
         self.btn_optimize.setCursor(Qt.PointingHandCursor)
         self.btn_optimize.clicked.connect(lambda: self.run_optimize())
-        top.addWidget(self.btn_optimize, 0, Qt.AlignBottom)
+        top.addWidget(self.btn_optimize, 0, Qt.AlignVCenter)
         layout.addLayout(top)
+
+        # 基线：把「页头」和「页内容」在物理上切开，左端的小方块是起点标记
+        layout.addWidget(Hairline())
 
         self.stack = QStackedWidget()
         layout.addWidget(self.stack, 1)
@@ -768,12 +868,12 @@ class MainWindow(QMainWindow):
         if key == "startup":
             from .page_startup import StartupPage
 
-            return StartupPage(self.store, self.tasks)
-
-        if key == "tasks":
-            from .page_tasks import TasksPage
-
-            return TasksPage(self.store, self.tasks)
+            page = StartupPage(self.store, self.tasks)
+            page.segment_changed.connect(self._on_segment_changed)
+            # 回到上次停的分段（换肤重建后尤其需要）
+            if self._startup_segment != "all":
+                page.set_segment(self._startup_segment)
+            return page
 
         if key == "registry":
             from .page_registry import RegistryPage
@@ -783,7 +883,11 @@ class MainWindow(QMainWindow):
         if key == "software":
             from .page_software import SoftwarePage
 
-            return SoftwarePage(self.store, self.tasks)
+            page = SoftwarePage(self.store, self.tasks)
+            page.segment_changed.connect(self._on_segment_changed)
+            if self._software_segment != "installed":
+                page.set_segment(self._software_segment)
+            return page
 
         if key == "sysinfo":
             from .page_sysinfo import SysInfoPage
@@ -827,6 +931,7 @@ class MainWindow(QMainWindow):
         self._current_page = key
         self.stack.setCurrentWidget(page)
         self.lbl_title.setText(PAGE_TITLES.get(key, ""))
+        self.lbl_index.setText(f"{_nav_index(key):02d}")
         # 监控页的副标题跟着内部分段走，其余页用固定文案
         sub = getattr(page, "subtitle", None)
         self.lbl_sub.setText(sub() if callable(sub) else PAGE_SUBS.get(key, ""))
@@ -876,6 +981,12 @@ class MainWindow(QMainWindow):
             self.lbl_sub.setText(subtitle)
         elif self._current_page == "bigfile":
             self._space_segment = key
+            self.lbl_sub.setText(subtitle)
+        elif self._current_page == "startup":
+            self._startup_segment = key
+            self.lbl_sub.setText(subtitle)
+        elif self._current_page == "software":
+            self._software_segment = key
             self.lbl_sub.setText(subtitle)
 
     # ---------------------------------------------------------- 体检数据
@@ -1081,9 +1192,9 @@ class MainWindow(QMainWindow):
         self._apply_style(lambda: T.set_theme(key))
 
     def apply_accent(self, color: str) -> None:
-        """切换强调色。空字符串表示跟随系统。同上，配置先落盘再决定要不要重建。"""
+        """切换强调色。空字符串表示品牌色，"system" 表示跟随系统。"""
         self.settings.accent = color
-        self._apply_style(lambda: T.set_accent(color or None))
+        self._apply_style(lambda: T.set_accent(color))
 
     def _apply_style(self, setter) -> None:
         """主题和强调色只差一个 setter，落盘 / 重建 / 重绘色板这段共用。
@@ -1153,14 +1264,19 @@ class MainWindow(QMainWindow):
         if T.set_theme("system"):
             self._rebuild_for_theme()
             return
-        # 强调色同理：只有用户没手选颜色（accent 为空）时才跟系统走
-        if not self.settings.accent:
+        # 强调色只在用户显式选了「跟随系统」时才跟着变；
+        # 默认是品牌色（accent 为空串），不该被壁纸带跑
+        if (self.settings.accent or "").strip().lower() == "system":
             if T.current_accent_base().upper() != T.system_accent().upper():
-                if T.set_accent(None):
+                if T.set_accent("system"):
                     self._rebuild_for_theme()
 
     def on_metrics(self, snap: MetricsSnapshot) -> None:
         self._snapshot = snap
+        # 换肤重建时 vitals 会被换掉，采样线程不等人，得防这一帧
+        vitals = getattr(self, "vitals", None)
+        if vitals is not None:
+            vitals.push([snap.cpu.total, snap.memory.percent, snap.disk.percent])
         for page in self._pages.values():
             if hasattr(page, "update_metrics"):
                 page.update_metrics(snap)

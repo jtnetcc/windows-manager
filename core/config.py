@@ -42,8 +42,11 @@ class Settings:
     deep_mode: bool = False
     # "system" / "dark" / "light"，旧的皮肤名会自动映射
     theme: str = "system"
-    # 空字符串表示跟随 Windows 系统强调色
+    # 空字符串 = 品牌色（默认）；"system" = 跟随 Windows 强调色；#RRGGBB = 指定色
     accent: str = ""
+    # 侧栏是否收起成图标条。收起后主内容区多出 160px，
+    # 分栏密集的页面（磁盘空间、软件专清）能少滚一屏。
+    sidebar_collapsed: bool = False
     # 告警
     alerts_enabled: bool = True
     alert_sound: bool = True

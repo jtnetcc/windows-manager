@@ -309,7 +309,7 @@ class OverviewPage(QWidget):
         stats.setContentsMargins(0, 1, 0, 0)
         stats.setSpacing(8)
         self._mem_values: list[QLabel] = []
-        for title, color in (("使用中", T.RED), ("待命", T.AMBER), ("空闲", T.GREEN)):
+        for title, color in zip(("使用中", "待命", "空闲"), T.mem_colors()):
             cell = QVBoxLayout()
             cell.setContentsMargins(0, 0, 0, 0)
             cell.setSpacing(1)
@@ -434,11 +434,12 @@ class OverviewPage(QWidget):
         self.chart.push([cpu.total, mem.percent])
 
         self.lbl_mem_total.setText(f"共 {mem.total / winmem.GB:.1f} GB")
+        used_color, cache_color, free_color = T.mem_colors()
         self.mem_bar.set_segments(
             [
-                (mem.used / total, T.RED),
-                (mem.cache / total, T.AMBER),
-                (mem.free / total, T.GREEN),
+                (mem.used / total, used_color),
+                (mem.cache / total, cache_color),
+                (mem.free / total, free_color),
             ]
         )
         self._mem_values[0].setText(fmt_bytes(mem.used))
@@ -604,9 +605,10 @@ class MemoryPage(QWidget):
         self.bar = SegmentBar(height=10)
         detail.add(self.bar)
 
-        self.dot_used = Dot(T.RED, "使用中")
-        self.dot_cache = Dot(T.AMBER, "待命")
-        self.dot_free = Dot(T.GREEN, "空闲")
+        used_color, cache_color, free_color = T.mem_colors()
+        self.dot_used = Dot(used_color, "使用中")
+        self.dot_cache = Dot(cache_color, "待命")
+        self.dot_free = Dot(free_color, "空闲")
         for dot in (self.dot_used, self.dot_cache, self.dot_free):
             detail.body().addWidget(dot)
 
@@ -651,11 +653,12 @@ class MemoryPage(QWidget):
             fmt_bytes(mem.commit_used), f"上限 {fmt_bytes(mem.commit_limit)}"
         )
         self.chart.push([mem.percent])
+        used_color, cache_color, free_color = T.mem_colors()
         self.bar.set_segments(
             [
-                (mem.used / total, T.RED),
-                (mem.cache / total, T.AMBER),
-                (mem.free / total, T.GREEN),
+                (mem.used / total, used_color),
+                (mem.cache / total, cache_color),
+                (mem.free / total, free_color),
             ]
         )
         self.dot_used.set_value(fmt_bytes(mem.used))

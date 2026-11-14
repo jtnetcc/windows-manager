@@ -33,6 +33,8 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMenu,
+    QSizePolicy,
     QTableWidget,
     QVBoxLayout,
     QWidget,
@@ -49,12 +51,129 @@ def font(size: int, weight: QFont.Weight = QFont.Normal) -> QFont:
     return f
 
 
+def mono(size: int, weight: QFont.Weight = QFont.Normal) -> QFont:
+    """等宽字体。数字一律用它：比例字每秒换值时字宽会变，整行在轻微呼吸。"""
+    f = QFont("Consolas")
+    f.setFamilies(["Consolas", "Cascadia Mono", "JetBrains Mono", "Courier New"])
+    f.setPixelSize(size)
+    f.setWeight(weight)
+    f.setStyleHint(QFont.Monospace)
+    return f
+
+
 def label(text: str, size: int = 12, color: str = T.TEXT,
           weight: QFont.Weight = QFont.Normal) -> QLabel:
     lb = QLabel(text)
     lb.setFont(font(size, weight))
     lb.setStyleSheet(f"color: {color}; background: transparent; border: none;")
     return lb
+
+
+def mono_label(text: str, size: int = 12, color: str = T.TEXT,
+               weight: QFont.Weight = QFont.Normal) -> QLabel:
+    lb = QLabel(text)
+    lb.setFont(mono(size, weight))
+    lb.setStyleSheet(f"color: {color}; background: transparent; border: none;")
+    return lb
+
+
+class ElidedLabel(QWidget):
+    """单行文本：放不下时画省略号，完整内容进提示框。
+
+    比 QLabel 好在两点：QLabel 遇到长文本是**直接裁掉**的，右边半个字都不剩，
+    看着像坏了（用户的原话是「有的字都不显示了」）；而且 QLabel 的
+    minimumSizeHint 按整段文本算，一个 40 字符的 NVMe 序列号就能把整列顶宽。
+
+    这里自绘，sizeHint 不参与布局，宽度由父布局决定，超出的部分变成「…」。
+    """
+
+    def __init__(self, text: str = "", size: int = 12, color: str = T.TEXT,
+                 weight: QFont.Weight = QFont.Normal, mode=Qt.ElideRight,
+                 use_mono: bool = False, parent=None):
+        super().__init__(parent)
+        self._text = text
+        self._color = color
+        self._mode = mode
+        self._font = mono(size, weight) if use_mono else font(size, weight)
+        self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        self.setFixedHeight(20)
+        if text:
+            self.setToolTip(text)
+
+    def text(self) -> str:
+        return self._text
+
+    def setText(self, text: str) -> None:
+        self._text = text or ""
+        self.setToolTip(self._text)
+        self.update()
+
+    def set_color(self, color: str) -> None:
+        if self._color != color:
+            self._color = color
+            self.update()
+
+    def contextMenuEvent(self, event) -> None:
+        """右键复制。自绘之后拿不到文字选择，复制得另开一个口子 ——
+        序列号、密钥这类东西用户是要拿去用的。"""
+        menu = QMenu(self)
+        action = menu.addAction("复制")
+        action.setEnabled(bool(self._text))
+        action.triggered.connect(lambda: copy_text(self._text))
+        menu.exec(event.globalPos())
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.TextAntialiasing, True)
+        painter.setFont(self._font)
+        painter.setPen(QColor(self._color))
+        metrics = painter.fontMetrics()
+        painter.drawText(
+            self.rect(),
+            Qt.AlignLeft | Qt.AlignVCenter,
+            metrics.elidedText(self._text, self._mode, self.width()),
+        )
+        painter.end()
+
+
+# 面板右上角切角尺寸。整套界面的形态语汇就靠这一个数：有切角 = 仪器面板，
+# 纯圆角 = 网页卡片。
+CHAMFER = 14.0
+
+
+def panel_path(rect: QRectF, chamfer: float = CHAMFER) -> QPainterPath:
+    """面板轮廓：右上角切一刀，其余保持直角。"""
+    path = QPainterPath()
+    path.moveTo(rect.left(), rect.top())
+    path.lineTo(rect.right() - chamfer, rect.top())
+    path.lineTo(rect.right(), rect.top() + chamfer)
+    path.lineTo(rect.right(), rect.bottom())
+    path.lineTo(rect.left(), rect.bottom())
+    path.closeSubpath()
+    return path
+
+
+def paint_panel(painter: QPainter, rect: QRectF, fill: str,
+                chamfer: float = CHAMFER) -> None:
+    """填一块切角面板，并画出「顶边高光 + 其余发丝线」。
+
+    四边等重的描边会让所有块面看起来一样重，所以顶边单独加粗到 1.6px：
+    光从上面打下来，面板才有厚度。
+    """
+    path = panel_path(rect, chamfer)
+    painter.setPen(Qt.NoPen)
+    painter.setBrush(QColor(fill))
+    painter.drawPath(path)
+
+    painter.setBrush(Qt.NoBrush)
+    painter.setPen(QPen(QColor(T.panel_edge()), 1))
+    painter.drawPath(path)
+
+    painter.setPen(QPen(QColor(T.panel_edge_top()), 1.6))
+    painter.drawLine(
+        QPointF(rect.left(), rect.top() + 0.8),
+        QPointF(rect.right() - chamfer + 0.5, rect.top() + 0.8),
+    )
 
 
 def copy_text(text: str) -> None:
@@ -179,20 +298,132 @@ def make_table(
     return table
 
 
+class Hairline(QWidget):
+    """贯穿整页的发丝线，左端压一个实心小方块。
+
+    方块的作用是给这条线一个「起点」：一条没有端头的细线看起来像分隔符，
+    带上起点标记之后就像仪表盘上的刻度基线。
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(3)
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setPen(QPen(QColor(T.panel_edge()), 1))
+        painter.drawLine(QPointF(0, 1.5), QPointF(self.width(), 1.5))
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(T.ACCENT))
+        painter.drawRect(QRectF(0, 0, 7, 3))
+        painter.end()
+
+
+class Vitals(QWidget):
+    """标题带上的全局体征：CPU / 内存 / 磁盘。
+
+    以前只有监控页知道机器现在怎么样，切到清理页就得靠记忆。这块常驻在
+    每一页的标题带右侧，任何时候都能扫一眼。
+
+    宽度不足时从右往左少画几个，不会把按钮挤出去。
+    """
+
+    UNIT_W = 108
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(24)
+        self._items = [
+            ("CPU", T.ACCENT, deque(maxlen=32)),
+            ("内存", T.PURPLE, deque(maxlen=32)),
+            ("磁盘", T.CYAN, deque(maxlen=32)),
+        ]
+        self.setToolTip("CPU / 内存 / 磁盘当前占用")
+
+    def push(self, values: list[float]) -> None:
+        for (_name, _color, data), value in zip(self._items, values):
+            data.append(max(0.0, min(100.0, float(value))))
+        self.update()
+
+    def _paint_unit(self, painter: QPainter, x: float, name: str,
+                    color: str, data: deque) -> None:
+        painter.setFont(font(11))
+        painter.setPen(QColor(T.TEXT_DIM))
+        painter.drawText(
+            QRectF(x, 0, 30, self.height()), Qt.AlignLeft | Qt.AlignVCenter, name
+        )
+
+        value = data[-1] if data else 0.0
+        painter.setFont(mono(12))
+        painter.setPen(QColor(T.TEXT_SUB))
+        painter.drawText(
+            QRectF(x + 32, 0, 36, self.height()),
+            Qt.AlignRight | Qt.AlignVCenter,
+            f"{value:.0f}%",
+        )
+
+        # 迷你曲线：纵轴固定 0~100，形状才有可比性，不跟着窗口自己缩放。
+        # 右侧留 14px 给相邻单元的分隔线，别让它切到曲线尾巴上。
+        left, width, height = x + 72, 22.0, self.height() - 8
+        top = (self.height() - height) / 2
+        if len(data) < 2:
+            return
+        path = QPainterPath()
+        step = width / max(1, len(data) - 1)
+        for index, item in enumerate(data):
+            px = left + index * step
+            py = top + height * (1 - item / 100.0)
+            if index == 0:
+                path.moveTo(px, py)
+            else:
+                path.lineTo(px, py)
+        painter.setPen(QPen(QColor(color), 1.2))
+        painter.setBrush(Qt.NoBrush)
+        painter.drawPath(path)
+
+        # 末端点：标出「当前」在曲线的哪个位置
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(color))
+        painter.drawEllipse(
+            QPointF(left + width, top + height * (1 - value / 100.0)), 1.8, 1.8
+        )
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        fit = min(len(self._items), int(self.width() // self.UNIT_W))
+        for index in range(fit):
+            name, color, data = self._items[index]
+            # 右对齐排布：紧贴右侧按钮，中间空出来的是标题的呼吸位
+            x = self.width() - (fit - index) * self.UNIT_W
+            if index:
+                painter.setPen(QPen(QColor(T.panel_edge()), 1))
+                painter.drawLine(
+                    QPointF(x - 7, 5), QPointF(x - 7, self.height() - 5)
+                )
+            self._paint_unit(painter, x, name, color, data)
+        painter.end()
+
+
 class Card(QFrame):
-    """面板容器。"""
+    """面板容器。右上角切角，顶边一道高光。
+
+    不用 QSS 画的原因有两个：QSS 做不出切角；而给容器设带通配符的样式表
+    会级联到卡片里的按钮和输入框，把它们的边框一起冲掉。所以整块面板自绘，
+    子控件保持自己的样式不动。
+    """
 
     def __init__(self, parent=None, padding: int = 14, spacing: int = 10,
-                 alt: bool = False):
+                 alt: bool = False, index: str | None = None):
         super().__init__(parent)
         self.setObjectName("Card")
-        bg = T.PANEL_ALT if alt else T.PANEL
-        self.setStyleSheet(
-            f"#Card {{ background: {bg}; border: 1px solid {T.BORDER};"
-            f" border-radius: 8px; }}"
-        )
+        self._alt = alt
+        self._pad = padding
+        # 通道编号（01 / 02 …）。给了就在左上角画一行小字，内容整体下移。
+        self._index = index
         self._layout = QVBoxLayout(self)
-        self._layout.setContentsMargins(padding, padding, padding, padding)
+        top = padding + 15 if index else padding
+        self._layout.setContentsMargins(padding, top, padding, padding)
         self._layout.setSpacing(spacing)
 
     def body(self) -> QVBoxLayout:
@@ -201,6 +432,26 @@ class Card(QFrame):
     def add(self, widget: QWidget, stretch: int = 0):
         self._layout.addWidget(widget, stretch)
         return widget
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        paint_panel(painter, rect, T.PANEL_ALT if self._alt else T.PANEL)
+        if self._index:
+            painter.setFont(mono(10))
+            painter.setPen(QColor(T.TEXT_DIM))
+            painter.drawText(
+                QRectF(self._pad, self._pad - 3, 40, 13),
+                Qt.AlignLeft | Qt.AlignVCenter,
+                self._index,
+            )
+            painter.setPen(QPen(QColor(T.BORDER_STRONG), 1))
+            painter.drawLine(
+                QPointF(self._pad + 18, self._pad),
+                QPointF(self._pad + 18, self._pad + 8),
+            )
+        painter.end()
 
 
 class Icon(QWidget):
@@ -229,10 +480,6 @@ class KpiCard(QFrame):
     def __init__(self, title: str, unit: str = "", icon: str = "", parent=None):
         super().__init__(parent)
         self.setObjectName("Kpi")
-        self.setStyleSheet(
-            f"#Kpi {{ background: {T.PANEL}; border: 1px solid {T.BORDER};"
-            f" border-radius: 8px; }}"
-        )
         self._unit = unit
         self._color = T.TEXT
         # 底部比例线：0~1，None 表示这个指标没有比例（比如网络速率）
@@ -253,7 +500,8 @@ class KpiCard(QFrame):
         head.addStretch(1)
         layout.addLayout(head)
 
-        self.lbl_value = label("--", 26, T.TEXT, QFont.DemiBold)
+        # 数值用等宽字：每秒刷新时字宽不会跟着数字变，读数才不抖
+        self.lbl_value = mono_label("--", 25, T.TEXT, QFont.DemiBold)
         self.lbl_sub = label("", 11, T.TEXT_DIM)
         layout.addWidget(self.lbl_value)
         layout.addWidget(self.lbl_sub)
@@ -290,24 +538,32 @@ class KpiCard(QFrame):
                 self.update()
 
     def paintEvent(self, event) -> None:
-        super().paintEvent(event)
-        if self._meter is None:
-            return
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing, True)
-        # 圆角裁剪：细线要贴着卡片下沿走，不能跳出边框
-        clip = QPainterPath()
-        clip.addRoundedRect(QRectF(self.rect()), 8, 8)
-        painter.setClipPath(clip)
+        rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        paint_panel(painter, rect, T.PANEL)
+        if self._meter is None:
+            painter.end()
+            return
+        # 比例线要贴着卡片下沿走，超出轮廓的部分裁掉
+        painter.setClipPath(panel_path(rect))
 
-        bar = QRectF(14, self.height() - 7.0, self.width() - 28, 3.0)
+        # 比例线改成分段电平：连续条形读起来像「进度条」，一格一格才像电量。
+        # 同一套东西换个画法，观感就从表单控件挪到了仪表。
+        bar = QRectF(14, self.height() - 8.0, self.width() - 28, 3.6)
+        seg, gap = 5.0, 2.4
+        count = max(1, int((bar.width() + gap) // (seg + gap)))
+        lit = int(round(count * self._meter))
+
         painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor(T.BORDER_SOFT))
-        painter.drawRoundedRect(bar, 1.5, 1.5)
-        filled = bar.width() * self._meter
-        if filled > 2.0:
-            painter.setBrush(QColor(self._meter_color))
-            painter.drawRoundedRect(QRectF(bar.x(), bar.y(), filled, 3.0), 1.5, 1.5)
+        for index in range(count):
+            x = bar.x() + index * (seg + gap)
+            if x + seg > bar.right() + 0.5:
+                break
+            painter.setBrush(
+                QColor(self._meter_color if index < lit else T.BORDER_SOFT)
+            )
+            painter.drawRect(QRectF(x, bar.y(), seg, bar.height()))
         painter.end()
 
 
@@ -442,21 +698,31 @@ class TrendChart(QWidget):
 
         # 多序列时左上角要放图例，给它单独留一条带子，别压在绘图区上
         top_pad = 18 if len(self._series) > 1 else 8
-        left_pad, right_pad, bottom_pad = 38, 6, 6
+        # 右边留 10px：末端的环形标记有半径，贴着画布边会被裁掉半个
+        left_pad, right_pad, bottom_pad = 38, 10, 6
         plot_w = rect.width() - left_pad - right_pad
         plot_h = rect.height() - top_pad - bottom_pad
 
         def y_for(value: float) -> float:
             return top_pad + plot_h * (1 - (value - low) / span)
 
-        # 网格
-        painter.setPen(QPen(QColor(T.BORDER_SOFT), 1, Qt.DashLine))
+        # 网格：改成点阵。横线会和曲线抢注意力，点阵退到背景里，
+        # 但保留「有刻度」的感觉 —— 一格一格数得清，比虚线更像仪器。
+        grid_pen = QPen(QColor(T.BORDER_STRONG), 1.6)
+        grid_pen.setCapStyle(Qt.RoundCap)
+        painter.setPen(grid_pen)
+        dots = []
         for frac in (0.0, 0.5, 1.0):
             y = top_pad + plot_h * frac
-            painter.drawLine(int(left_pad), int(y), int(left_pad + plot_w), int(y))
+            x = left_pad
+            while x <= left_pad + plot_w:
+                dots.append(QPointF(x, y))
+                x += 8.0
+        if dots:
+            painter.drawPoints(dots)
 
         # 纵轴刻度
-        painter.setFont(font(10))
+        painter.setFont(mono(10))
         painter.setPen(QColor(T.TEXT_DIM))
         for frac, value in ((0.0, high), (0.5, high / 2), (1.0, 0.0)):
             y = top_pad + plot_h * frac
@@ -504,18 +770,36 @@ class TrendChart(QWidget):
             line.moveTo(*points[0])
             for px, py in points[1:]:
                 line.lineTo(px, py)
+
+            # 光晕：同一根线先画两遍粗的、低透明度的，再压一遍实线。
+            # 比真的做模糊便宜得多，一秒一帧也不会掉。
+            painter.setBrush(Qt.NoBrush)
+            for width_px, alpha in ((6.5, 22), (3.2, 44)):
+                halo = QColor(color)
+                halo.setAlpha(alpha)
+                glow = QPen(halo, width_px)
+                glow.setCapStyle(Qt.RoundCap)
+                glow.setJoinStyle(Qt.RoundJoin)
+                painter.setPen(glow)
+                painter.drawPath(line)
+
             pen = QPen(QColor(color), 1.6)
             pen.setCapStyle(Qt.RoundCap)
             pen.setJoinStyle(Qt.RoundJoin)
             painter.setPen(pen)
-            painter.setBrush(Qt.NoBrush)
             painter.drawPath(line)
 
+            # 当前点：空心环 + 实心点。环让人一眼看到「读数停在哪」，
+            # 单纯一个点太容易和曲线拐点混在一起。
+            ex, ey = points[-1]
+            ring = QColor(color)
+            ring.setAlpha(90)
+            painter.setPen(QPen(ring, 1.2))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawEllipse(QPointF(ex, ey), 4.6, 4.6)
             painter.setPen(Qt.NoPen)
             painter.setBrush(QColor(color))
-            painter.drawEllipse(
-                QRectF(points[-1][0] - 2.4, points[-1][1] - 2.4, 4.8, 4.8)
-            )
+            painter.drawEllipse(QPointF(ex, ey), 2.0, 2.0)
 
         # 悬停读数：竖线 + 数值气泡
         if self._hover_x is not None and left_pad <= self._hover_x <= left_pad + plot_w:
@@ -791,33 +1075,35 @@ class Segmented(QWidget):
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing, True)
-
-        # 轨道：比页面底色深一档，选中胶囊才浮得起来
-        painter.setPen(QPen(QColor(T.BORDER), 1))
-        painter.setBrush(QColor(T.PANEL_SUNKEN))
-        painter.drawRoundedRect(
-            QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5), 8, 8
-        )
-
-        if self._hover >= 0 and self._keys[self._hover] != self._key:
-            painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor(T.HOVER))
-            painter.drawRoundedRect(self._item_rect(self._hover), 6, 6)
-
         active = self._keys.index(self._key) if self._key in self._keys else -1
-        if active >= 0:
-            painter.setPen(QPen(QColor(T.BORDER), 1))
-            painter.setBrush(QColor(T.PANEL))
-            painter.drawRoundedRect(self._item_rect(active), 6, 6)
+        metrics = QFontMetrics(font(13, QFont.DemiBold))
 
         for index, (_key, text) in enumerate(self._items):
+            rect = self._item_rect(index)
             is_active = index == active
-            painter.setFont(font(13, QFont.DemiBold if is_active else QFont.Normal))
-            # 选中项用强调色：浅色主题下轨道和胶囊都是灰白，只靠字重分不出来
-            painter.setPen(QColor(T.ACCENT if is_active else T.TEXT_SUB))
-            painter.drawText(
-                self._item_rect(index), Qt.AlignCenter, text
-            )
+            if is_active:
+                painter.setFont(font(13, QFont.DemiBold))
+                painter.setPen(QColor(T.ACCENT))
+            else:
+                # 悬停只提亮文字，不铺底色：底色留给选中项，少一层噪音
+                painter.setFont(font(13))
+                painter.setPen(QColor(T.TEXT_SUB if index == self._hover else T.TEXT_DIM))
+            painter.drawText(rect, Qt.AlignCenter, text)
+
+            if is_active:
+                # 下划强调线，宽度贴着文字，不做成整格
+                width = metrics.horizontalAdvance(text)
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(QColor(T.ACCENT))
+                painter.drawRect(
+                    QRectF(rect.center().x() - width / 2, self.HEIGHT - 2.0, width, 2.0)
+                )
+            if index:
+                x = rect.left() - self.PAD / 2
+                painter.setPen(QPen(QColor(T.BORDER), 1))
+                painter.drawLine(
+                    QPointF(x, rect.top() + 6), QPointF(x, rect.bottom() - 6)
+                )
         painter.end()
 
 
@@ -861,6 +1147,7 @@ class NavButton(HoverMixin, QWidget):
         self._icon = icon
         self._active = False
         self._pressed = False
+        self._compact = False
         self._on_click = on_click
         self.setFixedHeight(self.ROW_HEIGHT)
         self.setCursor(Qt.PointingHandCursor)
@@ -872,6 +1159,14 @@ class NavButton(HoverMixin, QWidget):
         if self._active != active:
             self._active = active
             self.update()
+
+    def set_compact(self, compact: bool) -> None:
+        """只留图标。文字挪进提示框，不然收起之后每一行都成了谜语。"""
+        if self._compact == compact:
+            return
+        self._compact = compact
+        self.setToolTip(self._text if compact else "")
+        self.update()
 
     def leaveEvent(self, event) -> None:
         # 按下后拖出范围再松开算取消，所以离开时除了清悬停还要清按下态
@@ -904,9 +1199,9 @@ class NavButton(HoverMixin, QWidget):
         rect = QRectF(self.rect()).adjusted(6, 1, -6, -1)
 
         if self._active:
-            # 浅色主题下侧栏是 #F9F9F9、卡片是 #FFFFFF，两者几乎同色，
-            # 选中态会看不出来，所以浅色改用更深一档的面板底色
-            active_bg = T.PANEL if T.is_dark() else T.PANEL_SUNKEN
+            # 选中底色统一走强调色的淡版：深色下是暗青，浅色下是极淡青。
+            # 原来浅色用 PANEL_SUNKEN（灰），和侧栏底色几乎同色，选中等于没选。
+            active_bg = T.ACCENT_SOFT
             painter.setPen(Qt.NoPen)
             painter.setBrush(QColor(active_bg))
             painter.drawRoundedRect(rect, 5, 5)
@@ -929,9 +1224,22 @@ class NavButton(HoverMixin, QWidget):
             )
 
         # 图标与文字：图标 16px，间距 11px，和设计稿一致
-        color = T.TEXT if self._active else T.TEXT_SUB
+        color = T.ACCENT if self._active else T.TEXT_SUB
         icon_color = T.ACCENT if self._active else T.TEXT_SUB
         text_left = 16.0
+
+        if self._compact:
+            # 收起态：图标居中，文字交给提示框
+            if self._icon:
+                box = QRectF(0, 0, 16, 16)
+                box.moveCenter(rect.center())
+                if not icons.draw(painter, self._icon, box, icon_color):
+                    painter.setPen(Qt.NoPen)
+                    painter.setBrush(QColor(icon_color))
+                    painter.drawEllipse(box.adjusted(4, 4, -4, -4))
+            painter.end()
+            return
+
         if self._icon:
             box = QRectF(rect.left() + 12, rect.center().y() - 8, 16, 16)
             if not icons.draw(painter, self._icon, box, icon_color):
