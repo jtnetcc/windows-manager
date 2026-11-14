@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -113,6 +114,7 @@ def main() -> int:
     def step(i: int = 0) -> None:
         keys = [key for key, _title in NAV_ITEMS]
         if i >= len(keys):
+            print(f"全部 {len(keys)} 项导航都能切，已建 {len(window._pages)} 页")
             segments(window)
             return
         key = keys[i]
@@ -126,6 +128,61 @@ def main() -> int:
         QTimer.singleShot(60, lambda: step(i + 1))
 
     def segments(win) -> None:
+        # 磁盘空间：两个分段都要能切，且大文件段默认扫整个系统盘 ——
+        # 单分区机器上「用户目录」只覆盖 C://Users//xxx，等于什么都没扫到
+        from core import bigfile as bf
+
+        win.switch_page("bigfile")
+        space_page = win._pages["bigfile"]
+        for key in ("analysis", "files"):
+            space_page.set_segment(key)
+            app.processEvents()
+            assert space_page.current_segment() == key, f"分段切不过去：{key}"
+        assert space_page.files._roots == bf.preset_roots("system"), "大文件默认范围不是系统盘"
+        assert bf.PRESETS[0][0] == "system", "「系统盘」不在范围列表第一位"
+        print("磁盘空间两个分段可切 · 大文件默认系统盘 ✓")
+        win.tasks.cancel_many("space", "space_sub")
+
+        # 系统信息：激活卡要起 cscript，1~2 秒才回来，单独排一个轮询
+        win.switch_page("sysinfo")
+        wait_activation(win, time.monotonic() + 25)
+
+    def wait_activation(win, deadline: float) -> None:
+        page = win._pages.get("sysinfo")
+        if page is not None and (page._activation_loading or page._storage_loading):
+            if time.monotonic() < deadline:
+                QTimer.singleShot(300, lambda: wait_activation(win, deadline))
+                return
+            raise AssertionError("激活或存储信息 25 秒没回来")
+        activation_card(win)
+
+    def activation_card(win) -> None:
+        from core import activation as act
+
+        page = win._pages["sysinfo"]
+        rows = page.row_act
+        expected = {"激活状态", "激活方式", "系统激活时间", "硬件激活时间",
+                    "产品密钥", "产品 ID"}
+        assert set(rows) == expected, f"激活卡的项不对：{set(rows) ^ expected}"
+        info = act.collect()
+        # 这台机器上一定有许可证库，时间推不出来说明路径或 ctime 读错了
+        assert info.system_time, "系统激活时间没推出来"
+        assert info.system_note, "系统激活时间缺来源说明"
+        status = rows["激活状态"].lbl_value.text()
+        assert status not in ("", "读取中…", "—"), f"激活状态没填：{status}"
+        print(f"系统信息激活卡 ✓（{status} · {info.system_time} · "
+              f"硬件 {info.hardware_time or '无记录'}）")
+
+        # 存储设备：每块盘两行，卡里行数必须对得上
+        assert page._disks, "存储设备没读出来"
+        assert page.disk_box.count() >= len(page._disks) * 2, "存储设备卡行数不对"
+        assert page.row_board["主板序列号"].lbl_value.text() != "读取中…"
+        # 显卡已并进「显示与网络」，主机名与「计算机名」重复、已删
+        assert "主机名" not in page.row_net, "重复的「主机名」又加回去了"
+        hours = [d.hours_text for d in page._disks]
+        print(f"存储设备 {len(page._disks)} 块 ✓（{page._disks[0].model} · "
+              f"通电 {hours[0]}）")
+
         win.switch_page("monitor")
         app.processEvents()
         monitor = win._pages["monitor"]
@@ -136,6 +193,15 @@ def main() -> int:
             assert monitor.current_segment() == key, f"分段切不过去：{key}"
             assert key in monitor._pages, f"分段没建出来：{key}"
         print(f"监控 6 个分段全部可建 ✓（建完 {rss():.1f} MB）")
+        # 每核占用只该有一份：总览和 CPU 段都放同一张 CoreTiles，
+        # 等于把「哪几个核在忙」看两遍，还挤掉了总览该有的内存构成
+        from ui.components import CoreTiles
+
+        assert not monitor._pages["overview"].findChildren(CoreTiles), (
+            "总览又出现了每核占用"
+        )
+        assert monitor._pages["cpu"].findChildren(CoreTiles), "CPU 段缺每核占用"
+        print("每核占用只在 CPU 段出现 ✓")
         if SHOT:
             win.grab().save(str(ROOT / "preview_start_process.png"))
         rebuild(win)
@@ -158,7 +224,7 @@ def main() -> int:
         if report["err"]:
             print("失败页：", report["err"])
         assert not report["err"], "有页面切不过去"
-        print(f"全部页面切换完成 {rss():.1f} MB，共 {len(window._pages)} 页已建")
+        print(f"换肤后重新建页完成 {rss():.1f} MB")
         window._shutdown()
         app.quit()
 

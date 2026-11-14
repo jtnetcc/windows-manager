@@ -54,6 +54,9 @@ class TaskCenter(QObject):
     finished = Signal(str, object)      # task_id, 结果
     cancelled = Signal(str)             # task_id
     failed = Signal(str, str, str)      # task_id, 描述, 错误信息
+    # 局部结果：长任务传回「已经做完的那一块」，界面边扫边显示。
+    # 目前只有磁盘空间分析用 —— 那一步要几十秒，等到最后才出结果太干。
+    partial = Signal(str, object)       # task_id, 局部结果
     queue_changed = Signal()
 
     def __init__(self, parent=None):
@@ -117,6 +120,15 @@ class TaskCenter(QObject):
             self._worker.cancel()
         self._queue.clear()
         self.queue_changed.emit()
+
+    def cancel_many(self, *task_ids: str) -> None:
+        """一次收掉这几个任务，页面重建 / 退出时用。
+
+        取消一个没在跑的任务只是返回 False，没有副作用，所以不用先查
+        is_busy —— 九个页面原来各自写了一遍 `if is_busy: cancel` 的循环。
+        """
+        for task_id in task_ids:
+            self.cancel(task_id)
 
     def shutdown(self, wait_ms: int = 2000) -> None:
         """退出前收尾，别让 QThread 在运行中被析构。"""

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QUrl, Signal
-from PySide6.QtGui import QDesktopServices, QFont
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QInputDialog,
@@ -21,13 +21,13 @@ from core import config, winmem
 from . import theme_dark as T
 from .components import AccentDot, Card, ComboBox, ToggleSwitch, label
 
-# 强调色预设：第一个是系统色，其余是 Win11 里常见的几种
+# 强调色预设。第一颗「默认」是品牌青色（value 为空串），最后那颗虚线环
+# 才是「跟随 Windows」—— 顺序反了会让用户以为默认就跟系统走。
 ACCENT_PRESETS = [
-    T.system_accent(),
     "#0078D4",
     "#8764B8",
-    "#038387",
     "#CA5010",
+    "#6D4FC4",
 ]
 
 
@@ -133,24 +133,36 @@ class SettingsPage(QWidget):
         accent_layout.setContentsMargins(0, 0, 0, 0)
         accent_layout.setSpacing(6)
         self._accent_dots: list[AccentDot] = []
-        # 第一颗是「跟随系统」，虚线环标记；点它会把 accent 存成空串
+        # 第一颗是「默认」品牌色，value 存空串
+        default_dot = AccentDot(
+            T.BRAND_ACCENT, selected=not settings.accent, value=""
+        )
+        default_dot.setToolTip("默认 · 冷青")
+        default_dot.clicked.connect(self.accent_changed.emit)
+        accent_layout.addWidget(default_dot)
+        self._accent_dots.append(default_dot)
+
+        pinned = (settings.accent or "").strip().upper()
+        for color in ACCENT_PRESETS:
+            dot = AccentDot(color, selected=bool(pinned) and color.upper() == pinned)
+            dot.clicked.connect(self.accent_changed.emit)
+            accent_layout.addWidget(dot)
+            self._accent_dots.append(dot)
+
+        # 最后一颗：跟随系统，虚线环标记，value 存 "system"
         sys_dot = AccentDot(
-            T.system_accent(), selected=not settings.accent, value="", system=True
+            T.system_accent(),
+            selected=(settings.accent or "").strip().lower() == "system",
+            value="system",
+            system=True,
         )
         sys_dot.clicked.connect(self.accent_changed.emit)
         accent_layout.addWidget(sys_dot)
         self._accent_dots.append(sys_dot)
-        base = T.current_accent_base().upper()
-        for color in ACCENT_PRESETS:
-            dot = AccentDot(
-                color, selected=bool(settings.accent) and color.upper() == base
-            )
-            dot.clicked.connect(self.accent_changed.emit)
-            accent_layout.addWidget(dot)
-            self._accent_dots.append(dot)
+
         accent_layout.addStretch(1)
         appearance.body().addWidget(
-            _row("强调色", "默认跟随 Windows 系统强调色", accent_box)
+            _row("强调色", "默认冷青，也可跟随系统或自选", accent_box)
         )
         root.addWidget(appearance)
 
@@ -319,11 +331,23 @@ class SettingsPage(QWidget):
             _row("开机自启", "以普通权限静默启动到托盘", self.chk_startup)
         )
 
-        self.chk_tray = ToggleSwitch()
-        self.chk_tray.set_checked_silently(settings.minimize_to_tray)
-        self.chk_tray.toggled.connect(self._on_tray)
+        # 点关闭按钮的三态。默认「每次询问」——旧版本是直接缩托盘，
+        # 用户点叉没反应，第一反应是软件卡死了。
+        self.combo_close = ComboBox()
+        for key, name in (
+            (config.ASK, "每次询问"),
+            (config.TRAY, "最小化到托盘"),
+            (config.QUIT, "直接退出"),
+        ):
+            self.combo_close.addItem(name, key)
+        self.combo_close.setFixedWidth(144)
+        index = self.combo_close.findData(settings.close_action)
+        if index >= 0:
+            self.combo_close.setCurrentIndex(index)
+        self.combo_close.currentIndexChanged.connect(self._on_close_action)
         behavior.body().addWidget(
-            _row("最小化到托盘", "不退出程序，保留后台监控", self.chk_tray)
+            _row("关闭窗口时", "缩到托盘可保留后台监控，直接退出则不再告警",
+                 self.combo_close)
         )
         root.addWidget(behavior)
 
@@ -397,14 +421,16 @@ class SettingsPage(QWidget):
                 self.combo_mode.setCurrentIndex(index)
                 self.combo_mode.blockSignals(False)
                 break
-        base = T.current_accent_base().upper()
-        pinned = (self.settings.accent or "").upper()
+        pinned = (self.settings.accent or "").strip()
         for dot in self._accent_dots:
             if dot.is_system():
+                # 系统色的点要跟着系统当前色实时变，否则和实际配色对不上
                 dot.set_color(T.system_accent())
+                dot.set_selected(pinned.lower() == "system")
+            elif dot.value() == "":
                 dot.set_selected(not pinned)
             else:
-                dot.set_selected(bool(pinned) and dot.value().upper() == base)
+                dot.set_selected(pinned.upper() == dot.value().upper())
 
     def _save(self) -> None:
         self.settings.save()
@@ -434,9 +460,20 @@ class SettingsPage(QWidget):
         self.settings.autostart = checked
         self._save()
 
-    def _on_tray(self, checked: bool) -> None:
-        self.settings.minimize_to_tray = checked
-        self._save()
+    def _on_close_action(self, index: int) -> None:
+        action = self.combo_close.itemData(index)
+        if action in config.CLOSE_ACTIONS:
+            self.settings.close_action = action
+            self._save()
+
+    def set_close_action(self, action: str) -> None:
+        """主窗口在关闭对话框里勾了「记住」，这里跟着走。"""
+        index = self.combo_close.findData(action)
+        if index < 0 or index == self.combo_close.currentIndex():
+            return
+        self.combo_close.blockSignals(True)
+        self.combo_close.setCurrentIndex(index)
+        self.combo_close.blockSignals(False)
 
     # -- 告警 ------------------------------------------------------
 

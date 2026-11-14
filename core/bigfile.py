@@ -8,14 +8,24 @@
 
 from __future__ import annotations
 
-import ctypes
 import os
-import string
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import safety, trash
+from . import safety, trash, winpath
 from .dup import SKIP_DIR_NAMES
+
+# FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS / ON_OPEN / OFFLINE
+_CLOUD_ATTRS = 0x00400000 | 0x00040000 | 0x00100000
+
+# 系统盘根目录下的这几个文件：扫得出来，删不得。
+# 注意不能直接用 `safety.is_protected` —— 它把整个 Program Files 和 Windows
+# 都算「受保护」，拿它当「不可勾选」会让系统盘范围扫出来的每一行都变灰。
+_SYSTEM_FILE_NAMES = {"hiberfil.sys", "pagefile.sys", "swapfile.sys", "memory.dmp", "bootmgr"}
+
+
+def is_system_file(path: str) -> bool:
+    return os.path.basename(path).lower() in _SYSTEM_FILE_NAMES
 
 PROGRESS_EVERY = 500
 DELETE_BATCH = 100
@@ -101,6 +111,9 @@ class BigFile:
     path: str
     size: int
     mtime: float
+    # 系统文件（休眠、分页、引导）。扫得出来但删不得，界面上要标灰不可勾，
+    # 否则用户勾了才发现「失败」，还以为程序有 bug。
+    locked: bool = False
 
     @property
     def name(self) -> str:
@@ -126,6 +139,9 @@ class BigFile:
 # ------------------------------------------------------------------ 扫描范围
 
 PRESETS: list[tuple[str, str]] = [
+    # 单分区机器上「用户目录」只覆盖 C://Users//xxx，装在 C://Games、
+    # C://Program Files 的东西全看不见，所以整个系统盘放第一位并做默认。
+    ("system", "系统盘"),
     ("home", "用户目录"),
     ("downloads", "下载文件夹"),
     ("desktop", "桌面"),
@@ -133,24 +149,6 @@ PRESETS: list[tuple[str, str]] = [
     ("drives", "整个磁盘"),
     ("custom", "选择目录…"),
 ]
-
-
-def _fixed_drives() -> list[str]:
-    drives: list[str] = []
-    try:
-        mask = ctypes.windll.kernel32.GetLogicalDrives()
-    except Exception:
-        return drives
-    for index, letter in enumerate(string.ascii_uppercase):
-        if not mask & (1 << index):
-            continue
-        root = f"{letter}:\\"
-        try:
-            if ctypes.windll.kernel32.GetDriveTypeW(root) == 3:  # DRIVE_FIXED
-                drives.append(root)
-        except Exception:
-            continue
-    return drives
 
 
 def _user_dirs(*names: str) -> list[str]:
@@ -165,8 +163,10 @@ def _user_dirs(*names: str) -> list[str]:
 
 def preset_roots(key: str) -> list[str]:
     """把界面上的「扫描范围」翻译成目录列表。"""
+    if key == "system":
+        return [os.environ.get("SystemDrive", "C:") + "\\"]
     if key == "home":
-        return [str(Path.home())]
+        return winpath.home_roots()
     if key == "downloads":
         return _user_dirs("Downloads", "下载")
     if key == "desktop":
@@ -174,12 +174,8 @@ def preset_roots(key: str) -> list[str]:
     if key == "media":
         return _user_dirs("Videos", "视频", "Pictures", "图片", "Music", "音乐")
     if key == "drives":
-        return _fixed_drives()
+        return winpath.fixed_drives()
     return []
-
-
-def default_roots() -> list[str]:
-    return [str(Path.home())]
 
 
 # ------------------------------------------------------------------ 扫描
@@ -193,6 +189,7 @@ class ScanResult:
     seen: int = 0          # 走过的文件总数（含不符合类型的）
     matched: int = 0       # 符合条件、但可能被 limit 截掉的个数
     truncated: bool = False
+    cloud_skipped: int = 0   # 因为「只在云端」被跳过的文件数
 
 
 def scan_ex(
@@ -220,6 +217,7 @@ def scan_ex(
 
     found: list[BigFile] = []
     seen = 0
+    cloud = 0
 
     for root in roots:
         if should_stop():
@@ -245,8 +243,14 @@ def scan_ex(
                     stat = os.stat(full)
                 except OSError:
                     continue
-                if stat.st_size >= min_size:
-                    found.append(BigFile(full, stat.st_size, stat.st_mtime))
+                if stat.st_size < min_size:
+                    continue
+                # OneDrive「按需」文件的逻辑大小几十 GB、本地实际 0 字节，
+                # 列进大文件清单就是纯误导
+                if stat.st_file_attributes & _CLOUD_ATTRS:
+                    cloud += 1
+                    continue
+                found.append(BigFile(full, stat.st_size, stat.st_mtime))
                 if seen % PROGRESS_EVERY == 0 and on_progress:
                     on_progress(seen, len(found))
 
@@ -254,11 +258,15 @@ def scan_ex(
         on_progress(seen, len(found))
 
     found.sort(key=lambda f: f.size, reverse=True)
+    top = found[:limit]
+    for item in top:
+        item.locked = is_system_file(item.path)
     return ScanResult(
-        files=found[:limit],
+        files=top,
         seen=seen,
         matched=len(found),
         truncated=len(found) > limit,
+        cloud_skipped=cloud,
     )
 
 

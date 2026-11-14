@@ -16,6 +16,8 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
+from . import winpath
+
 
 @dataclass
 class SocialRule:
@@ -23,10 +25,6 @@ class SocialRule:
     name: str
     app: str
     paths: list[str] = field(default_factory=list)
-
-
-def _documents() -> str:
-    return os.path.join(os.path.expanduser("~"), "Documents")
 
 
 def _children(path: str) -> list[str]:
@@ -108,7 +106,7 @@ def _collect(
 
 def discover() -> list[SocialRule]:
     """扫描本机装了哪些社交软件，返回可清理的缓存目录。"""
-    docs = _documents()
+    docs = winpath.documents()
     appdata = os.environ.get("APPDATA", "")
     local = os.environ.get("LOCALAPPDATA", "")
     rules: list[SocialRule] = []

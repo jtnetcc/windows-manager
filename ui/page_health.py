@@ -504,8 +504,7 @@ class HealthPage(QWidget):
         self._render(report)
 
     def shutdown(self) -> None:
-        if self.tasks.is_busy("health_probe"):
-            self.tasks.cancel("health_probe")
+        self.tasks.cancel_many("health_probe")
 
     # ---------------------------------------------------------- 实时数据
 

@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core import bigfile, trash
+from core import bigfile, safety, trash
 from core.metrics import fmt_bytes
 from core.store import BigFileState
 
@@ -53,7 +53,7 @@ LIMIT = 800  # 单次结果上限：再多列表也没法看，按体积取前 N
 # 筛选条只是在已有结果里看着玩，类型会真的改变扫描范围。
 KINDS: list[tuple[str, str]] = [("all", "全部类型")] + bigfile.CATEGORIES
 
-CUSTOM_INDEX = 5  # PRESETS 里「选择目录…」的位置
+CUSTOM_INDEX = len(bigfile.PRESETS) - 1  # PRESETS 里「选择目录…」的位置
 
 SORT_NAMES = {1: "名称", 2: "类型", 3: "大小", 4: "时间", 5: "目录"}
 
@@ -74,7 +74,7 @@ class BigFilePage(QWidget):
         self.tasks = tasks
         self._files: list[bigfile.BigFile] = []
         self._rows: list[bigfile.BigFile] = []
-        self._roots = bigfile.default_roots()
+        self._roots = bigfile.preset_roots("system")
         self._checked: set[str] = set()
         self._filter = "all"
         self._scan_kind = "all"
@@ -246,7 +246,7 @@ class BigFilePage(QWidget):
         hint = label(
             "「扫描类型」可以只找视频、安装包这些，切类型会自动调低体积门槛；"
             "点表头能按名称/大小/时间排序。扫描只读文件属性，删除一律走系统回收站，"
-            "误删可还原；系统与程序目录不在扫描范围内。",
+            "误删可还原；Windows 目录不在扫描范围内，休眠/分页文件会标灰不可选。",
             10,
             T.TEXT_DIM,
         )
@@ -486,9 +486,7 @@ class BigFilePage(QWidget):
             self.lbl_stat.setText("已取消删除")
 
     def shutdown(self) -> None:
-        for task_id in ("bigfile", "bigfile_clean"):
-            if self.tasks.is_busy(task_id):
-                self.tasks.cancel(task_id)
+        self.tasks.cancel_many("bigfile", "bigfile_clean")
 
     def _render_bigfile(self) -> None:
         state = self.store.bigfile
@@ -607,20 +605,37 @@ class BigFilePage(QWidget):
 
         for index, item in enumerate(self._rows):
             check = QTableWidgetItem()
-            check.setFlags(
-                Qt.ItemIsEnabled | Qt.ItemIsSelectable | Qt.ItemIsUserCheckable
-            )
+            flags = Qt.ItemIsEnabled | Qt.ItemIsSelectable
+            # 系统文件不给勾：勾了也只能得到「删除失败」，不如一开始就说清楚
+            if not item.locked:
+                flags |= Qt.ItemIsUserCheckable
+            check.setFlags(flags)
             check.setCheckState(
-                Qt.Checked if item.path in self._checked else Qt.Unchecked
+                Qt.Checked
+                if item.path in self._checked and not item.locked
+                else Qt.Unchecked
             )
             self.table.setItem(index, 0, check)
 
-            name_item = QTableWidgetItem(item.name)
+            # 名字后面直接写「系统文件」：光靠复选框不同（Qt 的勾选框禁用了
+            # 也还是那个方框）和字色变浅，用户根本看不出这行不能选
+            name_item = QTableWidgetItem(
+                f"{item.name}（系统文件）" if item.locked else item.name
+            )
             name_item.setFont(font(12))
-            name_item.setToolTip(f"{item.path}\n类型：{item.category_label}")
+            if item.locked:
+                name_item.setForeground(QColor(T.TEXT_DIM))
+                name_item.setToolTip(
+                    f"{item.path}\n系统文件，删除会影响休眠/分页，"
+                    "要处理请到「系统瘦身」"
+                )
+            else:
+                name_item.setToolTip(f"{item.path}\n类型：{item.category_label}")
             self.table.setItem(index, 1, name_item)
 
-            type_item = QTableWidgetItem(item.category_label)
+            type_item = QTableWidgetItem(
+                "系统文件" if item.locked else item.category_label
+            )
             type_item.setFont(font(11))
             type_item.setForeground(QColor(T.TEXT_DIM))
             type_item.setToolTip(
@@ -711,11 +726,11 @@ class BigFilePage(QWidget):
     # ---------------------------------------------------------- 选择
 
     def _check_all(self) -> None:
-        self._checked |= {f.path for f in self._rows}
+        self._checked |= {f.path for f in self._rows if not f.locked}
         self._sync_checkboxes()
 
     def _invert(self) -> None:
-        shown = {f.path for f in self._rows}
+        shown = {f.path for f in self._rows if not f.locked}
         self._checked = (self._checked - shown) | (shown - self._checked)
         self._sync_checkboxes()
 
@@ -732,7 +747,7 @@ class BigFilePage(QWidget):
         self._sync_selection()
 
     def _sync_selection(self) -> None:
-        chosen = [f for f in self._files if f.path in self._checked]
+        chosen = [f for f in self._files if f.path in self._checked and not f.locked]
         size = sum(f.size for f in chosen)
         self.lbl_sel.setText(
             f"已选 {len(chosen)} 项 · {fmt_bytes(size)}" if chosen else "已选 0 项"
@@ -745,15 +760,24 @@ class BigFilePage(QWidget):
     # ---------------------------------------------------------- 删除
 
     def delete_checked(self) -> None:
-        chosen = [f for f in self._files if f.path in self._checked]
+        chosen = [f for f in self._files if f.path in self._checked and not f.locked]
         if not chosen:
             return
         total = sum(f.size for f in chosen)
+        # 程序目录里的文件在安全层就被拦下，删不掉的会算进「失败」。
+        # 与其让用户看到「失败 6 个」以为自己搞坏了什么，不如提前说清楚。
+        blocked = [f for f in chosen if safety.is_protected(f.path)]
+        extra = ""
+        if blocked:
+            extra = (
+                f"\n\n其中 {len(blocked)} 个位于系统或程序目录，会被自动跳过"
+                "（这些位置删了会让软件无法运行）。"
+            )
         answer = QMessageBox.question(
             self,
             "删除到回收站",
             f"把选中的 {len(chosen)} 个文件（合计 {fmt_bytes(total)}）送进回收站？\n\n"
-            "这是系统回收站，误删可以从回收站还原。",
+            f"这是系统回收站，误删可以从回收站还原。{extra}",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
         )

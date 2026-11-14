@@ -21,6 +21,10 @@ def config_dir() -> Path:
 
 CONFIG_PATH = config_dir() / "config.json"
 
+# 关闭窗口的三种处理方式。ASK 是「问一次再记住」，TRAY/QUIT 是记住之后的两态。
+ASK, TRAY, QUIT = "ask", "tray", "quit"
+CLOSE_ACTIONS = (ASK, TRAY, QUIT)
+
 
 @dataclass
 class Settings:
@@ -30,13 +34,19 @@ class Settings:
     auto_threshold: int = 85
     whitelist: list[str] = field(default_factory=list)
     start_minimized: bool = False
-    minimize_to_tray: bool = True
+    # 点关闭按钮时怎么办：ask 每次询问 / tray 缩到托盘 / quit 直接退出。
+    # 以前是一个 minimize_to_tray 布尔量，默认 True，等于替用户决定「关不掉」，
+    # 单分区那批用户就是被这个坑到的 —— 点了叉什么也没发生，还以为卡死了。
+    close_action: str = "ask"
     autostart: bool = False
     deep_mode: bool = False
     # "system" / "dark" / "light"，旧的皮肤名会自动映射
     theme: str = "system"
-    # 空字符串表示跟随 Windows 系统强调色
+    # 空字符串 = 品牌色（默认）；"system" = 跟随 Windows 强调色；#RRGGBB = 指定色
     accent: str = ""
+    # 侧栏是否收起成图标条。收起后主内容区多出 160px，
+    # 分栏密集的页面（磁盘空间、软件专清）能少滚一屏。
+    sidebar_collapsed: bool = False
     # 告警
     alerts_enabled: bool = True
     alert_sound: bool = True
@@ -90,7 +100,11 @@ class Settings:
                     values[name] = value
             elif isinstance(base, list) and isinstance(value, list):
                 values[name] = [str(item) for item in value]
-        return cls(**values)
+        settings = cls(**values)
+        # 手改配置写进一个认不出的值时，回到「每次询问」而不是悄悄退出
+        if settings.close_action not in CLOSE_ACTIONS:
+            settings.close_action = "ask"
+        return settings
 
 
 # ---------------------------------------------------------------- 开机自启

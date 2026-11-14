@@ -165,6 +165,9 @@ class SysInfo:
     # 主板 / BIOS
     board_vendor: str = ""
     board_model: str = ""
+    board_serial: str = ""
+    system_model: str = ""
+    system_serial: str = ""
     bios_vendor: str = ""
     bios_version: str = ""
     bios_date: str = ""
@@ -197,12 +200,15 @@ def _parse_smbios(info: SysInfo) -> None:
                 info.bios_vendor = _pick(strings, data[4])
                 info.bios_version = _pick(strings, data[5])
                 info.bios_date = _pick(strings, data[8])
-            elif stype == 1 and len(data) >= 6:  # System
+            elif stype == 1 and len(data) >= 8:  # System
                 if not info.board_vendor:
                     info.board_vendor = _pick(strings, data[4])
-            elif stype == 2 and len(data) >= 6:  # Baseboard
+                info.system_model = _pick(strings, data[5])
+                info.system_serial = _pick(strings, data[7])
+            elif stype == 2 and len(data) >= 8:  # Baseboard
                 info.board_vendor = _pick(strings, data[4])
                 info.board_model = _pick(strings, data[5])
+                info.board_serial = _pick(strings, data[7])
             elif stype == 4 and len(data) >= 0x26:  # Processor
                 info.cpu_manufacturer = _pick(strings, data[7])
                 version = _pick(strings, data[0x10])
@@ -238,7 +244,8 @@ def _parse_smbios(info: SysInfo) -> None:
 # ---------------------------------------------------------------- 注册表
 
 
-def _reg(path: str, name: str, root=None):
+def reg(path: str, name: str, root=None):
+    """读一个 HKLM 值，读不到返回 None。activation.py 也用它。"""
     import winreg
 
     root = root or winreg.HKEY_LOCAL_MACHINE
@@ -252,10 +259,10 @@ def _reg(path: str, name: str, root=None):
 
 def _os_info(info: SysInfo) -> None:
     path = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion"
-    product = _reg(path, "ProductName") or ""
-    build = _reg(path, "CurrentBuild") or ""
-    ubr = _reg(path, "UBR")
-    display = _reg(path, "DisplayVersion") or ""
+    product = reg(path, "ProductName") or ""
+    build = reg(path, "CurrentBuild") or ""
+    ubr = reg(path, "UBR")
+    display = reg(path, "DisplayVersion") or ""
 
     # Win11 的注册表里 ProductName 仍写着 "Windows 10"，只能靠 build 号判断
     try:
@@ -269,18 +276,18 @@ def _os_info(info: SysInfo) -> None:
     info.os_build = f"{build}.{ubr}" if ubr else str(build)
     info.architecture = platform.machine()
 
-    stamp = _reg(path, "InstallDate")
+    stamp = reg(path, "InstallDate")
     if isinstance(stamp, int) and stamp > 0:
         info.install_date = time.strftime("%Y-%m-%d", time.localtime(stamp))
 
 
 def _cpu_info(info: SysInfo) -> None:
-    name = _reg(
+    name = reg(
         r"HARDWARE\DESCRIPTION\System\CentralProcessor\0", "ProcessorNameString"
     )
     if name:
         info.cpu_name = " ".join(str(name).split())
-    freq = _reg(
+    freq = reg(
         r"HARDWARE\DESCRIPTION\System\CentralProcessor\0", "~MHz"
     )
     if isinstance(freq, int) and not info.cpu_max_mhz:
@@ -392,10 +399,3 @@ def collect() -> SysInfo:
         except Exception:
             continue
     return info
-
-
-def fmt_size(size: int) -> str:
-    """字节格式化。统一实现在 winmem.fmt_size。"""
-    from .winmem import fmt_size as _fmt
-
-    return _fmt(size)

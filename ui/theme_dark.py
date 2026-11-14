@@ -1,11 +1,17 @@
-"""主题与全局样式（Windows 11 Fluent）。
+"""主题与全局样式。
 
-一套主题 = 一份调色板 + 一个强调色。配色全部取自 Win11 语义色，不自定义品牌色。
+一套主题 = 一份调色板 + 一个强调色。
+
+配色方向是「仪器面板」而不是「办公软件」：
+- 底色压暗并向蓝偏，面板才浮得起来；纯中性灰（#202020 那一套）读起来像后台网页。
+- 强调色固定为品牌青 `#2DD4BF`，不再默认跟随 Windows 系统色 —— 用户壁纸是红的，
+  整个软件就变红，品牌感无从谈起。想跟系统的仍可在设置里选。
+- 语义色提纯：警示红偏粉、警告黄偏橙，和底色拉开距离。
 
 和上一版的区别：
-- 从「6 套自定义配色」改成「浅色 / 深色 / 跟随系统」三档
-- 强调色读 Windows 系统强调色，深色模式下自动提亮保证对比度
-- 所有颜色仍然从模块全局变量取，页面里不要写死十六进制
+- 强调色默认品牌色，「跟随系统」变成需要主动选择的选项（accent = "system"）
+- 深色底从 #202020 换成 #0A0E13，面板 #121A23
+- 面板边框改由 `panel_edge()` 派生，带一点冷青，不再是中性灰线
 
 切换靠 `set_theme()` 改全局变量，再由主窗口重建界面 —— 很多控件的颜色是在
 构造时写进内联样式表的，光改变量不会让它们变色。
@@ -17,11 +23,16 @@ from dataclasses import dataclass
 
 FONT = '"Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", sans-serif'
 SIDEBAR_WIDTH = 228
+# 收起态只留图标轨道：32px 导航行 + 左右各 17px 呼吸位
+SIDEBAR_WIDTH_COMPACT = 66
 
 MODES = ("system", "dark", "light")
 MODE_NAMES = {"system": "跟随系统", "dark": "深色", "light": "浅色"}
 
-FALLBACK_ACCENT = "#0078D4"
+# 品牌强调色。深色下往白里提亮、浅色下往黑里压深，同一颗种子两套都成立。
+BRAND_ACCENT = "#2DD4BF"
+# 读不到系统强调色时的兜底，和品牌色一致
+FALLBACK_ACCENT = BRAND_ACCENT
 
 
 @dataclass(frozen=True)
@@ -123,78 +134,79 @@ def system_is_dark() -> bool:
 
 def _build(dark: bool, accent_base: str) -> Theme:
     if dark:
-        # 深色下把强调色往白里提，否则在 #2B2B2B 上对比度不够
-        accent = mix(accent_base, "#FFFFFF", 0.34)
+        # 深色下把强调色往白里提，否则在 #121A23 上对比度不够
+        accent = mix(accent_base, "#FFFFFF", 0.26)
         return Theme(
             key="dark",
             name="深色",
             dark=True,
-            bg="#202020",
-            sidebar="#272727",
-            panel="#2B2B2B",
-            panel_alt="#323232",
-            panel_sunken="#1F1F1F",
-            hover="#383838",
-            border="#3D3D3D",
-            border_soft="#343434",
-            border_strong="#4A4A4A",
-            text="#FFFFFF",
-            text_sub="#D6D6D6",
-            text_dim="#9A9A9A",
+            bg="#0A0E13",
+            sidebar="#0D131A",
+            panel="#121A23",
+            panel_alt="#16202B",
+            panel_sunken="#0C1219",
+            hover="#1B2733",
+            border="#1E2B38",
+            border_soft="#182431",
+            border_strong="#2C3E4F",
+            text="#E8F3F2",
+            text_sub="#9DB2BF",
+            text_dim="#6A818F",
             accent=accent,
-            accent_soft=mix("#2B2B2B", accent, 0.18),
-            accent_hover=mix(accent, "#FFFFFF", 0.16),
-            accent_pressed=mix(accent, "#000000", 0.14),
-            on_accent=mix(accent, "#000000", 0.82),
-            red="#FF99A4",
-            amber="#F2C14E",
-            green="#6CCB5F",
-            cyan="#7DB8FF",
-            purple="#C3A0FF",
-            track="#3D3D3D",
-            knob="#FFFFFF",
-            scroll="#4A4A4A",
-            scroll_hover="#5E5E5E",
+            accent_soft=mix("#121A23", accent, 0.17),
+            accent_hover=mix(accent, "#FFFFFF", 0.14),
+            accent_pressed=mix(accent, "#000000", 0.16),
+            on_accent=mix(accent, "#000000", 0.84),
+            red="#FF5C7A",
+            amber="#FFB13D",
+            green="#35D69A",
+            cyan="#45B8F5",
+            purple="#A78BFA",
+            track="#1E2B38",
+            knob="#E8F3F2",
+            scroll="#2C3E4F",
+            scroll_hover="#3C5364",
             # Win11 表格不隔行变色，这里保持一致
-            row_alt="#2B2B2B",
-            toast_bg="#2B2B2B",
-            dot_neutral="#5E5E5E",
+            row_alt="#121A23",
+            toast_bg="#16202B",
+            dot_neutral="#55697A",
         )
 
-    accent = mix(accent_base, "#000000", 0.08)
+    # 浅色下强调色要压深：白底上 #2DD4BF 只有 1.8:1，当文字读不清
+    accent = mix(accent_base, "#000000", 0.32)
     return Theme(
         key="light",
         name="浅色",
         dark=False,
-        bg="#F3F3F3",
-        sidebar="#F9F9F9",
+        bg="#EFF4F6",
+        sidebar="#F7FAFB",
         panel="#FFFFFF",
-        panel_alt="#F7F7F7",
-        panel_sunken="#EFEFEF",
-        hover="#F0F0F0",
-        border="#E3E3E3",
-        border_soft="#ECECEC",
-        border_strong="#D6D6D6",
-        text="#1A1A1A",
-        text_sub="#5D5D5D",
-        text_dim="#8B8B8B",
+        panel_alt="#F4F8FA",
+        panel_sunken="#E9F0F3",
+        hover="#EAF1F4",
+        border="#DCE6EB",
+        border_soft="#E6EEF2",
+        border_strong="#C6D6DE",
+        text="#0D1A20",
+        text_sub="#47606D",
+        text_dim="#7B909C",
         accent=accent,
         accent_soft=mix("#FFFFFF", accent, 0.10),
         accent_hover=mix(accent, "#000000", 0.12),
         accent_pressed=mix(accent, "#000000", 0.24),
         on_accent="#FFFFFF",
-        red="#D13438",
-        amber="#C07C00",
-        green="#107C10",
-        cyan="#0078D4",
-        purple="#8764B8",
-        track="#E3E3E3",
+        red="#C62B45",
+        amber="#A65E00",
+        green="#10794F",
+        cyan="#0B7FB8",
+        purple="#6D4FC4",
+        track="#DCE6EB",
         knob="#FFFFFF",
-        scroll="#C7C7C7",
-        scroll_hover="#A8A8A8",
+        scroll="#C4D2DA",
+        scroll_hover="#A6B8C2",
         row_alt="#FFFFFF",
         toast_bg="#FFFFFF",
-        dot_neutral="#C7C7C7",
+        dot_neutral="#C4D2DA",
     )
 
 
@@ -204,7 +216,7 @@ DEFAULT_THEME = "system"
 
 _current: Theme = _build(True, FALLBACK_ACCENT)
 _mode = "system"
-_accent_base = FALLBACK_ACCENT
+_accent_base = BRAND_ACCENT
 
 # 下面这些是给页面用的全局变量，由 _publish 赋值
 BG = SIDEBAR = PANEL = PANEL_ALT = PANEL_SUNKEN = HOVER = ""
@@ -274,9 +286,24 @@ def set_theme(mode: str) -> bool:
 
 
 def set_accent(color: str | None = None) -> bool:
-    """设置强调色。传 None 表示跟随系统。"""
+    """设置强调色。
+
+    三种取值：
+    - `None` / 空串 → 品牌色（默认）
+    - `"system"`    → 跟随 Windows 系统强调色
+    - `#RRGGBB`     → 指定颜色
+
+    和上一版的区别：空串原来表示「跟随系统」，现在表示「用品牌色」。
+    默认跟系统会让整个软件的色调被壁纸决定，科技感根本立不住。
+    """
     global _accent_base
-    target = (color or system_accent()).upper()
+    raw = (color or "").strip()
+    if not raw:
+        target = BRAND_ACCENT
+    elif raw.lower() == "system":
+        target = system_accent()
+    else:
+        target = raw.upper()
     if target == _accent_base:
         return False
     _accent_base = target
@@ -317,6 +344,31 @@ def with_alpha(color: str, alpha: float) -> str:
     """把 #RRGGBB 转成 rgba()，用于描边、分隔线这类需要半透明的地方。"""
     r, g, b = _to_rgb(color)
     return f"rgba({r}, {g}, {b}, {alpha:.2f})"
+
+
+def panel_edge() -> str:
+    """切角面板的发丝线。
+
+    往强调色混合，而不是往正文色混 —— 一条中性灰边只会让面板显得「普通」，
+    带一点冷青的边才是仪表盘的感觉。浅色底上颜色本来就淡，
+    不加重到 30% 根本看不见轮廓。
+    """
+    return mix(PANEL, ACCENT, 0.30 if not is_dark() else 0.18)
+
+
+def mem_colors() -> tuple[str, str, str]:
+    """内存构成的三段：已用 / 待命 / 空闲。
+
+    不用红黄绿。内存占 60% 是正常状态，画成红灯会让整页一直像在报警；
+    改用主色阶 —— 亮青 → 暗青 → 中性灰，量级照样一眼能分。
+    第三段不用 TRACK：那是「空轨道」的色，当图例圆点会看不见。
+    """
+    return (ACCENT, mix(ACCENT, PANEL, 0.58), mix(TRACK, TEXT_DIM, 0.60))
+
+
+def panel_edge_top() -> str:
+    """面板顶边高光线。比发丝线再亮一档，模拟从上方打的光。"""
+    return mix(PANEL, TEXT, 0.26)
 
 
 def load_color(percent: float) -> str:
@@ -368,6 +420,11 @@ def app_stylesheet() -> str:
         color: {TEXT};
     }}
     QMainWindow, #Root, #PageArea {{
+        background: {BG};
+    }}
+    /* 对话框不在 QMainWindow 体系里，不写这条就是系统默认的白底 ——
+       深色主题下白底配深色按钮，像贴错了一张图 */
+    QDialog {{
         background: {BG};
     }}
     QScrollArea {{ background: transparent; border: none; }}

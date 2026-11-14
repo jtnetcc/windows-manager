@@ -105,6 +105,11 @@ PATHS: dict[str, str] = {
         '<circle cx="8" cy="8" r="5.7"/>'
         '<path d="M8 7.3v3.3"/><path d="M8 4.9v.2"/>'
     ),
+    # 钥匙：激活与授权。齿做在杆的下侧，避免和「对勾」同形
+    "key": (
+        '<circle cx="5.4" cy="10.6" r="2.6"/>'
+        '<path d="M7.4 8.8 13 3.2M9.6 6.6l1.3 1.3M11.2 5l1.2 1.2"/>'
+    ),
 }
 
 _CACHE: dict[tuple[str, str], QSvgRenderer] = {}

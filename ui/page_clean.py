@@ -32,7 +32,7 @@ from core.metrics import fmt_bytes
 from core.store import JunkState
 
 from . import theme_dark as T
-from .components import Card, CheckBox, MiniBar, RankList, SegmentBar, label
+from .components import Card, CheckBox, HoverMixin, MiniBar, RankList, SegmentBar, label
 
 # 分类构成条用的颜色：固定顺序取色，同一个分类在条形图和列表里颜色一致
 CATEGORY_COLORS = (T.ACCENT, T.CYAN, T.GREEN, T.AMBER, T.PURPLE, T.BLUE, T.RED)
@@ -60,7 +60,7 @@ def _close_label(holders: list[filelock.Holder]) -> str:
     return f"关闭 {len(holders)} 个程序并清理"
 
 
-class RuleRow(QWidget):
+class RuleRow(HoverMixin, QWidget):
     """一条清理项：复选框 + 名称 + 说明 + 体积。
 
     整行可点：名称、说明、空白处点一下都能切换勾选。只有 16px 的方框可点
@@ -72,7 +72,6 @@ class RuleRow(QWidget):
     def __init__(self, rule: cleaner.Rule, checked: bool, parent=None):
         super().__init__(parent)
         self.rule = rule
-        self._hover = False
         self.setFixedHeight(self.HEIGHT)
         self.setAttribute(Qt.WA_Hover, True)
         self.setCursor(Qt.PointingHandCursor)
@@ -104,13 +103,6 @@ class RuleRow(QWidget):
             paths += f"\n… 共 {len(self.rule.paths)} 处"
         return f"{self.rule.note or self.rule.category}\n\n清理位置：\n{paths}"
 
-    def enterEvent(self, event) -> None:
-        self._hover = True
-        self.update()
-
-    def leaveEvent(self, event) -> None:
-        self._hover = False
-        self.update()
 
     def mouseReleaseEvent(self, event) -> None:
         if event.button() == Qt.LeftButton and self.rect().contains(
@@ -744,9 +736,7 @@ class CleanPage(QWidget):
 
     def shutdown(self) -> None:
         """换肤重建界面前调用：让任务停下来，别让 QThread 在运行中被析构。"""
-        for task_id in ("junk", "junk_clean", "junk_locks", "junk_unlock"):
-            if self.tasks.is_busy(task_id):
-                self.tasks.cancel(task_id)
+        self.tasks.cancel_many("junk", "junk_clean", "junk_locks", "junk_unlock")
 
     # ---------------------------------------------------------- 渲染
 

@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core import dup, trash
+from core import dup, trash, winpath
 from core.store import DupState
 from core.metrics import fmt_bytes
 
@@ -45,7 +45,7 @@ class DupPage(QWidget):
         self.store = store
         self.tasks = tasks
         self._groups: list[dup.DupGroup] = []
-        self._roots = dup.default_roots()
+        self._roots = winpath.home_roots()
 
         self.store.dup_changed.connect(self._render_dup)
         self.tasks.progress.connect(self._on_task_progress)
@@ -216,8 +216,7 @@ class DupPage(QWidget):
         self.lbl_stat.setText("已取消")
 
     def shutdown(self) -> None:
-        if self.tasks.is_busy("dup"):
-            self.tasks.cancel("dup")
+        self.tasks.cancel_many("dup")
 
     def _render_dup(self) -> None:
         state = self.store.dup

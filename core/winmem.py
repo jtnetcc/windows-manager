@@ -196,6 +196,29 @@ def fmt_size(size: int) -> str:
 # ---------------------------------------------------------------- 采集接口
 
 
+def _align(
+    total: int, avail: int, free: int, modified: int, standby: int
+) -> tuple[int, int, int]:
+    """把「空闲 / 待命 / 已修改」对齐到 Windows 的 avail 口径。
+
+    内核页列表在没开 `SeProfileSingleProcessPrivilege` 时会「部分字段有效」：
+    FreePageCount 是对的，PageCountByPriority（待命）却只回来一小截。用户截图上
+    就出现过「使用中 12.83 GB + 可用 11.40 GB = 24 GB，物理内存只有 15.7 GB」，
+    自相矛盾，构成图里待命那块还特别窄。
+
+    而 avail 里本来就含着待命（avail = 空闲 + 待命 + 已修改），是现成的权威值，
+    反推即可，不用去抢特权。返回 (free, standby, modified)。
+    """
+    if free + standby + modified == 0:
+        return avail, 0, 0
+    implied = avail - free - modified
+    if implied > standby:
+        standby = implied
+    if free + standby + modified > total:
+        standby = max(0, total - free - modified)
+    return free, standby, modified
+
+
 def read_memory() -> MemSnapshot:
     """读取当前物理内存状态。"""
     status = MEMORYSTATUSEX()
@@ -247,8 +270,7 @@ def read_memory() -> MemSnapshot:
 
     # free / standby / modified 只用于界面上的细分展示，不参与占用率计算。
     # 页列表读不到时退回「可用即空闲」，至少不会给出错的数字。
-    if free + standby + modified == 0:
-        free = avail
+    free, standby, modified = _align(total, avail, free, modified, standby)
 
     if has_perf:
         commit_used = int(perf.CommitTotal * page_size)

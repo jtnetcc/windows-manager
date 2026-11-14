@@ -21,6 +21,8 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
+from . import winpath
+
 
 @dataclass
 class Target:
@@ -88,13 +90,9 @@ class _Spec:
     kinds: tuple[_Kind, ...]
 
 
-def _documents() -> str:
-    return os.path.join(os.path.expanduser("~"), "Documents")
-
-
 def _specs() -> list[_Spec]:
     """每次现算：环境变量（APPDATA 等）在进程内不会变，但路径拼接很便宜。"""
-    docs = _documents()
+    docs = winpath.documents()
     appdata = os.environ.get("APPDATA", "")
     local = os.environ.get("LOCALAPPDATA", "")
 

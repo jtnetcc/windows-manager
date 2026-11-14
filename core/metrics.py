@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import os
 import shutil
 import socket
 import subprocess
@@ -15,7 +14,7 @@ from dataclasses import dataclass
 
 import psutil
 
-from . import winmem
+from . import winmem, winpath
 
 MB = 1024 * 1024
 
@@ -96,11 +95,6 @@ def _cpu_model() -> str:
         import platform
 
         return platform.processor() or "未知处理器"
-
-
-def _system_drive() -> str:
-    drive = os.environ.get("SystemDrive", "C:")
-    return f"{drive}\\"
 
 
 class MetricsCollector:
@@ -260,7 +254,7 @@ class MetricsCollector:
         except Exception:
             pass
 
-        mount = _system_drive()
+        mount = winpath.system_drive()
         try:
             usage = psutil.disk_usage(mount)
             total, used, free, percent = usage.total, usage.used, usage.free, usage.percent
