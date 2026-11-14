@@ -31,6 +31,8 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
 API_ROOT = "https://api.github.com"
+# 脚本可能在任意目录被调起，git 命令和文件读取都锚在项目根
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 class GitHub:
@@ -70,7 +72,9 @@ class GitHub:
 def local_files() -> list[str]:
     """工作区里被 git 跟踪的文件。关掉 quotepath 保住中文路径。"""
     out = subprocess.check_output(
-        ["git", "-c", "core.quotepath=false", "ls-files"], text=True
+        ["git", "-c", "core.quotepath=false", "ls-files"],
+        text=True,
+        cwd=ROOT,
     )
     return [line for line in out.splitlines() if line.strip()]
 
@@ -107,8 +111,23 @@ def main() -> int:
         return 0
 
     def upload(path: str):
-        with open(path, "rb") as handle:
-            raw = handle.read()
+        # 内容取自 git 对象，不是磁盘。
+        #
+        # 开了 core.autocrlf 时工作区是 CRLF、仓库里存的是 LF，直接读磁盘会把
+        # 每个文件都变成「整文件重写」：远端 tree 哈希和本地 HEAD 对不上，
+        # GitHub 上的 diff 也会糊成一片。`git cat-file blob :path` 拿的是索引里
+        # 那份字节，和本地提交完全一致。
+        try:
+            raw = subprocess.run(
+                ["git", "-c", "core.quotepath=false", "cat-file", "blob", f":{path}"],
+                cwd=ROOT,
+                capture_output=True,
+                check=True,
+            ).stdout
+        except subprocess.CalledProcessError:
+            # 索引里没有（未跟踪）就退回磁盘，至少不会中断整个推送
+            with open(os.path.join(ROOT, path), "rb") as handle:
+                raw = handle.read()
         status, body = gh.call(
             "POST",
             f"{gh.api}/git/blobs",
