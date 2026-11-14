@@ -246,7 +246,7 @@ class CleanPage(QWidget):
 
         self.rule_rows: list[RuleRow] = []
         for rule in cleaner.builtin_rules():
-            # 默认勾选「安全项」：社交缓存含用户真正收到过的图片视频，不自动勾。
+            # 默认勾选「安全项」：默认关闭的规则（如浏览器历史）不自动勾。
             # needs_admin 只在普通权限下才退回不勾 —— 打包后的程序默认带管理员。
             checked = not rule.default_off and (self._admin or not rule.needs_admin)
             widget = RuleRow(rule, checked)
@@ -256,8 +256,8 @@ class CleanPage(QWidget):
 
         list_card.body().addStretch(1)
         hint = label(
-            "只清可再生缓存。系统、程序与文档目录不会被碰到；"
-            "社交缓存含已收的图片视频，需要手动勾选。",
+            "只清可再生缓存。系统、程序与文档目录不会被碰到。"
+            "微信/QQ 等软件缓存请到「软件专清」处理。",
             10,
             T.TEXT_DIM,
         )
@@ -350,7 +350,7 @@ class CleanPage(QWidget):
     # ---------------------------------------------------------- 交互
 
     def _selected_rows(self) -> list[RuleRow]:
-        """参与「全选/全不选」的行：社交缓存这类默认关闭的不算在内。"""
+        """参与「全选/全不选」的行：默认关闭的规则不算在内。"""
         return [r for r in self.rule_rows if not r.rule.default_off]
 
     def _toggle_all(self) -> None:
@@ -515,7 +515,7 @@ class CleanPage(QWidget):
         """构造扫描任务：在工作线程里扫，返回 JunkState 由主窗口写进 store。"""
 
         def run(report, should_stop):
-            # 名字表只取一次：builtin_rules() 里含社交目录探测，反复调用很慢
+            # 名字表只取一次：builtin_rules() 会碰注册表和多个目录，反复调用很慢
             names = {r.id: r.name for r in cleaner.builtin_rules()}
             order = [rid for rid in rule_ids if rid in names]
             total_rules = max(1, len(order))
@@ -542,7 +542,6 @@ class CleanPage(QWidget):
                 items=items,
                 total=sum(i.size for i in items),
                 update_backlog=cleaner.update_backlog(items),
-                social=sum(i.size for i in items if i.category == "社交缓存"),
                 scanned_at=time.time(),
             )
 

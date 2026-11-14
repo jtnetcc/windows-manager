@@ -270,7 +270,7 @@ class HealthPage(QWidget):
         score_card = Card(padding=10, spacing=4)
         head = QHBoxLayout()
         head.setContentsMargins(0, 0, 0, 0)
-        head.addWidget(label("综合评分", 14, T.TEXT, QFont.DemiBold))
+        head.addWidget(label("可清理项评分", 14, T.TEXT, QFont.DemiBold))
         head.addStretch(1)
         score_card.body().addLayout(head)
 
@@ -594,18 +594,28 @@ class HealthPage(QWidget):
 
 
     def _render(self, report: health.HealthReport) -> None:
-        color = LEVEL_COLORS.get(report.level_color, T.ACCENT)
-        self.ring.set_score(report.score, report.level, color)
+        # 只展示「靠清理能改善」的项。硬件三项（容量/磁盘/文件系统）已经在
+        # 系统信息的「硬件健康」卡片里 —— 它们改不了，混进来只会让 72 分
+        # 被读成「硬盘要坏了」，其实只是垃圾多。
+        factors = report.cleanup_factors
+        score = report.cleanup_score
+        level, color_key = health.level_of(score)
+        color = LEVEL_COLORS.get(color_key, T.ACCENT)
+        self.ring.set_score(score, level, color)
+
+        measured = sum(1 for f in factors if f.measured)
         self.lbl_scope.setText(
-            f"已测 {report.measured_count}/11 项 · 覆盖权重 {report.measured_weight}/100"
+            f"已测 {measured}/{len(factors)} 项 · 硬件状态见「系统信息」"
         )
         self.lbl_detail_note.setText(
-            "灰色项扫描后自动补齐" if not report.complete else "全部指标已接入"
+            "灰色项扫描后自动补齐"
+            if measured < len(factors)
+            else "全部指标已接入"
         )
 
         for index, row in enumerate(self.rows):
-            if index < len(report.factors):
-                factor = report.factors[index]
+            if index < len(factors):
+                factor = factors[index]
                 row.show()
                 row.set_factor(factor, health.FACTOR_PAGE.get(factor.key, ""))
             else:

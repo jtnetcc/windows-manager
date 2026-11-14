@@ -22,13 +22,30 @@ class JunkState:
     items: list = field(default_factory=list)
     total: int = 0
     update_backlog: int = 0
-    # 其中属于社交软件缓存的部分，体检要单独算一项
-    social: int = 0
     scanned_at: float = 0.0
 
     @property
     def ready(self) -> bool:
         return self.scanned_at > 0
+
+
+@dataclass
+class AppCleanState:
+    """软件专清的聚合结果。
+
+    明细（几百个目录、逐类勾选状态）留在页面上，这里只存体检与顶部
+    「可释放」要用的总量 —— 和 JunkState 存明细不同，是因为这批数据的
+    生命周期只在一屏之内，塞进 store 反而要维护两份。
+
+    之所以要有这个状态：社交软件的缓存原来由 cleaner 扫一遍、appclean 再扫
+    一遍，两个页面能对同一批目录给出不同的数字。现在只由 appclean 负责，
+    体检从这里读。
+    """
+
+    ready: bool = False
+    total: int = 0
+    apps: int = 0
+    scanned_at: float = 0.0
 
 
 @dataclass
@@ -112,6 +129,7 @@ class Store(QObject):
     """数据仓库。所有信号都在主线程发，页面可以直接改控件。"""
 
     junk_changed = Signal()
+    appclean_changed = Signal()
     dup_changed = Signal()
     bigfile_changed = Signal()
     startup_changed = Signal()
@@ -122,6 +140,7 @@ class Store(QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.junk = JunkState()
+        self.appclean = AppCleanState()
         self.dup = DupState()
         self.bigfile = BigFileState()
         self.startup = StartupState()
@@ -142,6 +161,16 @@ class Store(QObject):
         if task_id == "junk":
             self.junk = result
             self.junk_changed.emit()
+        elif task_id == "appclean_scan":
+            # 扫描结果是一串 AppStat（含目录明细），这里只留聚合值
+            stats = result or []
+            self.appclean = AppCleanState(
+                ready=True,
+                total=sum(getattr(a, "size", 0) for a in stats),
+                apps=sum(1 for a in stats if getattr(a, "size", 0)),
+                scanned_at=time.time(),
+            )
+            self.appclean_changed.emit()
         elif task_id == "dup":
             self.dup = result
             self.dup_changed.emit()
@@ -165,23 +194,12 @@ class Store(QObject):
             return False
         return True
 
-    def set_junk_items(
-        self, items: list, total: int, update_backlog: int,
-        social: int | None = None,
-    ) -> None:
-        """清理动作执行后，就地更新剩余项，不用重扫。
-
-        social 不单独传时按剩余项重算：漏掉它会让体检误以为社交缓存已经清空。
-        """
-        if social is None:
-            social = sum(
-                i.size for i in items if getattr(i, "category", "") == "社交缓存"
-            )
+    def set_junk_items(self, items: list, total: int, update_backlog: int) -> None:
+        """清理动作执行后，就地更新剩余项，不用重扫。"""
         self.junk = JunkState(
             items=items,
             total=total,
             update_backlog=update_backlog,
-            social=social,
             scanned_at=time.time(),
         )
         self.junk_changed.emit()
@@ -223,7 +241,10 @@ class Store(QObject):
         if self.junk.ready:
             out["junk_bytes"] = self.junk.total
             out["update_backlog"] = self.junk.update_backlog
-            out["social_bytes"] = self.junk.social
+        # 软件缓存改由 appclean 单独负责：cleaner 里那四条社交规则已删，
+        # 同一批目录不能两个页面各扫一遍、各报一个数
+        if self.appclean.ready:
+            out["social_bytes"] = self.appclean.total
         if self.dup.ready:
             out["dup_bytes"] = self.dup.wasted
         if self.registry.ready:
@@ -240,6 +261,10 @@ class Store(QObject):
         parts: list[tuple[str, str, int, float]] = []
         if self.junk.ready and self.junk.total > 0:
             parts.append(("垃圾文件", "clean", self.junk.total, self.junk.scanned_at))
+        if self.appclean.ready and self.appclean.total > 0:
+            parts.append(
+                ("软件缓存", "appclean", self.appclean.total, self.appclean.scanned_at)
+            )
         if self.dup.ready and self.dup.wasted > 0:
             parts.append(("重复文件", "dup", self.dup.wasted, self.dup.scanned_at))
         return parts

@@ -87,7 +87,6 @@ def main() -> None:
                 items=items,
                 total=sum(i.size for i in items),
                 update_backlog=update_backlog(items),
-                social=sum(i.size for i in items if i.category == "社交缓存"),
                 scanned_at=time.time(),
             )
             window.store.junk_changed.emit()

@@ -166,7 +166,7 @@ def _scan_stamp(scanned_at: float) -> str:
 PAGE_SUBS = {
     "monitor": "实时监控 CPU、内存、磁盘与网络",
     "sysinfo": "本机硬件与系统参数一目了然",
-    "health": "11 项指标加权评分与优化建议",
+    "health": "能清多少、清哪里，以及对应的处理入口",
     "clean": "只清理可再生的临时文件与缓存",
     "appclean": "按软件清理缓存与已接收的图片视频",
     "slim": "关掉不需要的系统功能，收回能安全释放的空间",
@@ -410,6 +410,7 @@ class MainWindow(QMainWindow):
         # 页面清理完不会走 store.apply()，而是直接 set_junk_items / set_dup_groups，
         # 所以顶部「可释放」必须自己订阅信号，否则清完了数字还挂着不动
         self.store.junk_changed.connect(self._refresh_status_bar)
+        self.store.appclean_changed.connect(self._refresh_status_bar)
         self.store.dup_changed.connect(self._refresh_status_bar)
         self._build_tray()
         self._start_samplers()
