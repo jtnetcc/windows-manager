@@ -257,7 +257,7 @@ class CleanPage(QWidget):
         list_card.body().addStretch(1)
         hint = label(
             "只清可再生缓存。系统、程序与文档目录不会被碰到。"
-            "微信/QQ 等软件缓存请到「软件专清」处理。",
+            "微信/QQ 等软件缓存请到「按软件」分段处理。",
             10,
             T.TEXT_DIM,
         )

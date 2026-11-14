@@ -383,7 +383,7 @@ FACTOR_PAGE = {
     "free": "bigfile",     # 空间不够 → 大文件页挑着删
     "junk": "clean",
     "dup": "dup",
-    "social": "appclean",  # 软件缓存只在「软件专清」里处理
+    "social": "appclean",  # 清理中心的「按软件」分段（旧 key，switch_page 会翻译）
     "reg": "registry",
     "startup": "startup",
     "upd": "clean",
@@ -421,7 +421,8 @@ def build_advice(snapshot: HealthSnapshot, factors: list[Factor]) -> list[Advice
     if low("social"):
         add(
             "social",
-            f"微信/QQ 等软件缓存达 {_size(snapshot.social_bytes)}，可在软件专清里逐类勾选。",
+            f"微信/QQ 等软件缓存达 {_size(snapshot.social_bytes)}，"
+            "可在「清理中心 → 按软件」逐类勾选。",
         )
     if low("reg"):
         add("reg", f"注册表冗余约 {snapshot.registry_count} 项，建议备份后清理。")

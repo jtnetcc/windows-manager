@@ -345,7 +345,7 @@ class HealthPage(QWidget):
         # 5 个等级贴上排，说明文字贴底，中间多出来的高度不用摊进行距
         legend.body().addStretch(1)
         note = label(
-            "灰色项需要先执行对应扫描（垃圾清理、重复文件）才会纳入评分。",
+            "灰色项需要先执行对应扫描（常规清理、重复文件）才会纳入评分。",
             11,
             T.TEXT_DIM,
         )
