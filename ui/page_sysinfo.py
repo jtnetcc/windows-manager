@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core import activation, diskinfo, sysinfo
+from core import activation, diskinfo, health, sysinfo
 from core.winmem import fmt_size
 
 from . import theme_dark as T
@@ -129,6 +129,7 @@ class SysInfoPage(QWidget):
     # Python 线程不是 QObject，页面没了信号自然没人接，不用额外收尾。
     activation_ready = Signal(object)
     storage_ready = Signal(object)
+    hardware_ready = Signal(object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -140,8 +141,12 @@ class SysInfoPage(QWidget):
         self._storage_loading = False
         self._storage_done = False
         self._storage_error = ""
+        self._hw_factors: list = []
+        self._hw_loading = False
+        self._hw_done = False
         self.activation_ready.connect(self._on_activation)
         self.storage_ready.connect(self._on_storage)
+        self.hardware_ready.connect(self._on_hardware)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -228,6 +233,18 @@ class SysInfoPage(QWidget):
         self.card_net.body().addStretch(1)
         grid.addWidget(self.card_net, 2, 1)
 
+        # -- 硬件健康：从体检的 11 项里拆出来的 3 项。
+        # 这几项改不了，只能知道 —— 混在体检总分里会让用户误以为
+        # 「72 分」说明硬盘要坏了，其实只是垃圾多。
+        self.card_hw = Card(padding=14, spacing=2)
+        self.card_hw_head = self._title("硬件健康", "health")
+        self.card_hw.body().addWidget(self.card_hw_head)
+        self.hw_box = QVBoxLayout()
+        self.hw_box.setSpacing(2)
+        self.card_hw.body().addLayout(self.hw_box)
+        self.card_hw.body().addStretch(1)
+        grid.addWidget(self.card_hw, 3, 0, 1, 2)
+
         # -- 激活与授权：整行通铺，内部拆两列，六项刚好三行
         self.card_act = Card(padding=14, spacing=2)
         self.card_act.body().addWidget(self._title("激活与授权", "key"))
@@ -250,7 +267,7 @@ class SysInfoPage(QWidget):
             columns.addLayout(column, 1)
         self.card_act.body().addLayout(columns)
         self.card_act.body().addStretch(1)
-        grid.addWidget(self.card_act, 3, 0, 1, 2)
+        grid.addWidget(self.card_act, 4, 0, 1, 2)
 
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 1)
@@ -298,6 +315,68 @@ class SysInfoPage(QWidget):
         self._render(info)
         self._load_activation()
         self._load_storage()
+        self._load_hardware()
+
+    # ---------------------------------------------------------- 硬件健康
+
+    def _load_hardware(self) -> None:
+        """硬件三项要开物理磁盘句柄，慢，放后台。
+
+        不依赖任何清理扫描 —— 系统信息页打开就该有数，哪怕用户从没跑过体检。
+        """
+        if self._hw_done:
+            self._render_hardware(self._hw_factors)
+            return
+        if self._hw_loading:
+            return
+        self._hw_loading = True
+        threading.Thread(target=self._fetch_hardware, daemon=True).start()
+
+    def _fetch_hardware(self) -> None:
+        try:
+            snapshot = health.probe_system()
+            factors = health.compute(snapshot).hardware_factors if snapshot else []
+        except Exception:
+            applog.failed("page_sysinfo.fetch_hardware")
+            factors = []
+        try:
+            self.hardware_ready.emit(factors)
+        except RuntimeError:
+            applog.silenced("page_sysinfo._fetch_hardware")
+
+    def _on_hardware(self, factors: list) -> None:
+        self._hw_loading = False
+        self._hw_done = True
+        self._hw_factors = factors
+        self._render_hardware(factors)
+
+    def _render_hardware(self, factors: list) -> None:
+        while self.hw_box.count():
+            item = self.hw_box.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+        if not factors:
+            self.hw_box.addWidget(InfoRow("", "读取中…" if self._hw_loading else "—"))
+            return
+
+        for factor in factors:
+            row = InfoRow(factor.label, factor.detail or "—", width=96)
+            ratio = factor.ratio
+            if not factor.measured:
+                row.set_color(T.TEXT_DIM)
+            elif ratio >= 0.8:
+                row.set_color(T.GREEN)
+            elif ratio >= 0.5:
+                row.set_color(T.AMBER)
+            else:
+                row.set_color(T.RED)
+            if factor.score < factor.weight:
+                row.lbl_value.setToolTip(
+                    f"{factor.detail}\n得分 {factor.score:g}/{factor.weight}"
+                )
+            self.hw_box.addWidget(row)
 
     # ---------------------------------------------------------- 存储
 

@@ -35,6 +35,11 @@ class Factor:
     score: float
     detail: str
     measured: bool = True
+    # "hardware" = 机器本身的健康（容量/磁盘/文件系统），改不了，只能知道；
+    # "cleanup"  = 靠清理能改善的项。
+    # 分开是因为混在一起算总分会让用户误读：一个 72 分其实在说「垃圾有点多」，
+    # 而他会以为「我的硬盘要坏了」。
+    kind: str = "cleanup"
 
     @property
     def max(self) -> int:
@@ -97,6 +102,35 @@ class HealthReport:
     total_weight: int = 100
     snapshot: HealthSnapshot | None = None
     scanned_at: float = 0.0
+
+    @property
+    def hardware_factors(self) -> list[Factor]:
+        return [f for f in self.factors if f.kind == "hardware"]
+
+    @property
+    def cleanup_factors(self) -> list[Factor]:
+        return [f for f in self.factors if f.kind != "hardware"]
+
+    @staticmethod
+    def _group_score(items: list[Factor]) -> int:
+        """组内按权重归一化到 100。
+
+        只算「测到了」的项：没测的项如果计入分母，会凭空拉低分数，
+        用户看到硬件分掉下来但找不到原因。
+        """
+        weight = sum(f.weight for f in items if f.measured)
+        if not weight:
+            return 0
+        got = sum(f.score for f in items if f.measured)
+        return round(got / weight * 100)
+
+    @property
+    def hardware_score(self) -> int:
+        return self._group_score(self.hardware_factors)
+
+    @property
+    def cleanup_score(self) -> int:
+        return self._group_score(self.cleanup_factors)
 
     @property
     def measured_count(self) -> int:
@@ -172,6 +206,7 @@ def compute(snapshot: HealthSnapshot) -> HealthReport:
             larger_better(total_gb, 120, 64, 5),
             f"{total_gb:.0f} GB",
             measured=snapshot.system_total > 0,
+            kind="hardware",
         )
     )
 
@@ -199,11 +234,11 @@ def compute(snapshot: HealthSnapshot) -> HealthReport:
         )
     )
 
-    # 5. 社交缓存 8
+    # 5. 软件缓存 8（唯一来源是「软件专清」，cleaner 不再重复扫）
     factors.append(
         Factor(
             "social",
-            "社交软件缓存",
+            "软件缓存",
             8,
             smaller_better(snapshot.social_bytes, 1 * GB, 15 * GB, 8),
             _size(snapshot.social_bytes) if snapshot.has_social else "未扫描",
@@ -261,7 +296,9 @@ def compute(snapshot: HealthSnapshot) -> HealthReport:
         measured = True
     elif snapshot.smart_ok is True:
         detail += " · SMART 正常"
-    factors.append(Factor("disk", "磁盘健康", 11, disk_score, detail, measured))
+    factors.append(
+        Factor("disk", "磁盘健康", 11, disk_score, detail, measured, kind="hardware")
+    )
 
     # 9. 文件系统与 4K 对齐 7
     fs_score = 5.0
@@ -287,6 +324,7 @@ def compute(snapshot: HealthSnapshot) -> HealthReport:
             fs_score,
             fs_detail,
             measured=bool(snapshot.file_system),
+            kind="hardware",
         )
     )
 
@@ -345,7 +383,7 @@ FACTOR_PAGE = {
     "free": "bigfile",     # 空间不够 → 大文件页挑着删
     "junk": "clean",
     "dup": "dup",
-    "social": "clean",     # 社交缓存是清理页里的一组规则
+    "social": "appclean",  # 软件缓存只在「软件专清」里处理
     "reg": "registry",
     "startup": "startup",
     "upd": "clean",
@@ -383,7 +421,7 @@ def build_advice(snapshot: HealthSnapshot, factors: list[Factor]) -> list[Advice
     if low("social"):
         add(
             "social",
-            f"社交软件缓存达 {_size(snapshot.social_bytes)}，可清理图片/视频缓存。",
+            f"微信/QQ 等软件缓存达 {_size(snapshot.social_bytes)}，可在软件专清里逐类勾选。",
         )
     if low("reg"):
         add("reg", f"注册表冗余约 {snapshot.registry_count} 项，建议备份后清理。")

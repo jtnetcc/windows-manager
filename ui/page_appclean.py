@@ -672,16 +672,9 @@ class AppCleanPage(QWidget):
         self._checked -= self._purge_keys
         self._purge_keys = set()
 
-        # 垃圾清理页里同一批文件可能还挂着：按路径把它们摘掉，否则那边
-        # 会显示一个早就不存在的体积，点「立即清理」却清了个寂寞
-        if result.removed_paths:
-            junk = self.store.junk
-            if junk.ready:
-                keep = [i for i in junk.items if i.path not in result.removed_paths]
-                if len(keep) != len(junk.items):
-                    self.store.set_junk_items(
-                        keep, sum(i.size for i in keep), junk.update_backlog, junk.social
-                    )
+        # 体积变了，重算一遍聚合值：体检的「软件缓存」因子和顶部「可释放」
+        # 都读 store.appclean，不刷新的话清完了数字还挂着
+        self.store.apply("appclean_scan", self._stats)
 
         freed = fmt_bytes(result.freed)
         if result.remaining:

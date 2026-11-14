@@ -277,26 +277,14 @@ def builtin_rules() -> tuple[Rule, ...]:
                 )
             )
 
-    # 社交软件缓存：只清图片/视频/文件缓存，不碰聊天记录数据库。
-    # 这些删掉的是用户实际收到过的内容，所以默认不勾选。
-    try:
-        from . import social
-
-        for item in social.discover():
-            rules.append(
-                Rule(
-                    item.id,
-                    item.name,
-                    "社交缓存",
-                    item.paths,
-                    0,
-                    True,
-                    note="只清缓存，不动聊天记录",
-                    default_off=True,
-                )
-            )
-    except Exception:
-        applog.silenced("cleaner.builtin_rules")
+    # 社交软件缓存**不在这里扫**。
+    #
+    # 微信/QQ/企业微信/钉钉的缓存原来在这四行里各有一条规则，而「软件专清」
+    # 整页做的就是同一件事：同一批目录，两个页面都能清、都能报体积，数字还
+    # 按不同口径算（这边按目录类型，那边按软件聚合）。用户在 A 页清完，
+    # 切到 B 页还显示同样的 GB，只会得出「没清掉」的结论。
+    #
+    # 现在由 core/appclean.py 单独负责，体检也从那边读（store.AppCleanState）。
 
     program_data = _env("ProgramData") or _env("ALLUSERSPROFILE")
     if program_data:
