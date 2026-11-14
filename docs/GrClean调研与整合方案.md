@@ -2,7 +2,7 @@
 
 调研对象：<https://github.com/graent/grclean>
 调研时间：2026-11-07
-对照项目：Windows系统管家（本地 `C:/Users/Jt/WorkBuddy AI/内存占用`）
+对照项目：Windows系统管家（本地项目目录）
 
 ---
 

@@ -23,9 +23,9 @@ from ui.main_window import MainWindow
 
 def remaining_items() -> list[FileItem]:
     return [
-        FileItem(r"C:\Users\Jt\AppData\Local\Google\Chrome\User Data\Default\Cache\f_0000a1", 320_000_000, "chrome_cache", "浏览器缓存"),
-        FileItem(r"C:\Users\Jt\AppData\Local\Google\Chrome\User Data\Default\Cache\f_0000a2", 180_000_000, "chrome_cache", "浏览器缓存"),
-        FileItem(r"C:\Users\Jt\AppData\Local\Microsoft\Edge\User Data\Default\Cache\f_0000b1", 96_000_000, "edge_cache", "浏览器缓存"),
+        FileItem(r"C:\Users\User\AppData\Local\Google\Chrome\User Data\Default\Cache\f_0000a1", 320_000_000, "chrome_cache", "浏览器缓存"),
+        FileItem(r"C:\Users\User\AppData\Local\Google\Chrome\User Data\Default\Cache\f_0000a2", 180_000_000, "chrome_cache", "浏览器缓存"),
+        FileItem(r"C:\Users\User\AppData\Local\Microsoft\Edge\User Data\Default\Cache\f_0000b1", 96_000_000, "edge_cache", "浏览器缓存"),
     ]
 
 
