@@ -127,12 +127,15 @@ def fake_stats() -> list[appclean.AppStat]:
 def main() -> None:
     out = Path(sys.argv[1] if len(sys.argv) > 1 else "preview_appclean.png")
     mode = sys.argv[2] if len(sys.argv) > 2 else "dark"
-    real = mode == "real"
+    # 真实模式默认选中第一个软件，第 3 个参数可以指定选中谁（按名字模糊匹配）
+    pick = sys.argv[3] if len(sys.argv) > 3 else ""
+    real = mode.startswith("real")
+    theme = "light" if "light" in mode else "dark"
 
     app = QApplication(sys.argv[:1])
     settings = config.Settings.load()
     theme_dark.set_accent(settings.accent or None)
-    theme_dark.set_theme("light" if mode == "light" else "dark")
+    theme_dark.set_theme(theme)
     app.setStyleSheet(theme_dark.app_stylesheet())
     app.setQuitOnLastWindowClosed(False)
 
@@ -163,8 +166,21 @@ def main() -> None:
         window._shutdown()
         app.quit()
 
+    def pick_current() -> None:
+        if not pick:
+            return
+        for stat in page._stats:
+            if pick.lower() in stat.app.name.lower():
+                page._current = stat.app.key
+                page._rebuild_apps()
+                page._render_detail()
+                page._sync_buttons()
+                break
+
     # 真实模式等自动扫描出结果，假数据直接套
     QTimer.singleShot(3000 if real else 1200, shot if real else apply_fake)
+    if real and pick:
+        QTimer.singleShot(2500, pick_current)
     app.exec()
 
 

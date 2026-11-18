@@ -1,0 +1,7 @@
+# 打包用依赖（运行时不装这些，只有出安装包时才要）
+#
+#   pip install -r requirements-build.txt
+#
+# PyInstaller 6.x 起对 PySide6 6.6+ 的 hook 才完整，别降到 5.x。
+-r requirements.txt
+pyinstaller>=6.6,<7

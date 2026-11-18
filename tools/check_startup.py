@@ -86,24 +86,25 @@ def main() -> int:
         assert any(word in t for t in texts), f"关于页缺承诺：{word}"
     print("关于页 = 免费开源 ✓")
 
-    # 下载渠道：填了 url 的必须显示出地址和按钮，没填的不该摆一颗点不动的按钮
+    # 下载渠道：**任何下载地址都不许出现在界面和 tooltip 里**（用户明确要求，
+    # OSS 按流量计费）。渠道只留名称 + 说明 + 一颗「打开」，没有「复制」。
     from ui.page_about import CHANNELS
 
     page = window._pages["about"]
-    live = [c for c in CHANNELS if c.url]
+    live = [c for c in CHANNELS if c.url is not None]
     assert live, "没有任何可用的下载渠道"
-    for channel in live:
-        # 卡片里为了对齐会把长地址的中间省掉（见 page_about._short_address），
-        # 所以这里校验「域名露出来了」+「tooltip 里有完整地址」两件事。
-        host = channel.url.split("://", 1)[-1].split("/", 1)[0]
-        assert any(host in t for t in texts), f"关于页没显示地址：{channel.name}"
-        assert any(
-            channel.url in lb.toolTip() for lb in labels
-        ), f"关于页的 tooltip 里没有完整地址：{channel.name}"
+    # 地址哪怕只露一个域名也算没隐藏，这里按「有没有 http 字样」一刀切，
+    # 比逐个列举域名更难绕过。
+    assert not any("http" in t for t in texts), [
+        t for t in texts if "http" in t
+    ]
+    for lb in labels:
+        assert "http" not in lb.toolTip(), f"地址进了 tooltip：{lb.toolTip()}"
     buttons = [btn.text() for btn in page.findChildren(QPushButton)]
     opened = buttons.count("打开")
     assert opened == len(live), f"「打开」按钮 {opened} 个，渠道 {len(live)} 个"
-    print(f"下载渠道 {len(live)} 个（共 {len(CHANNELS)} 个位）· 地址与按钮齐全 ✓")
+    assert "复制" not in buttons, "渠道行还能一键复制地址"
+    print(f"下载渠道 {len(live)} 个（共 {len(CHANNELS)} 个位）· 地址零上屏 ✓")
     window.switch_page("health")
     app.processEvents()
 
@@ -179,9 +180,14 @@ def main() -> int:
         print(f"系统信息激活卡 ✓（{status} · {info.system_time} · "
               f"硬件 {info.hardware_time or '无记录'}）")
 
-        # 存储设备：每块盘两行，卡里行数必须对得上
+        # 存储设备：一块盘一个 _DiskBlock（块内三行），卡里的块数必须对得上。
+        # 原来断言的是 `>= 盘数 * 2`，那是「每块盘两行」时代的写法，
+        # `_DiskBlock` 改成三行一块之后这条一直是个假通过。
         assert page._disks, "存储设备没读出来"
-        assert page.disk_box.count() >= len(page._disks) * 2, "存储设备卡行数不对"
+        assert page.disk_box.count() == len(page._disks), (
+            f"存储设备块数不对：卡里 {page.disk_box.count()} 块，"
+            f"读到 {len(page._disks)} 块"
+        )
         assert page.row_board["主板序列号"].lbl_value.text() != "读取中…"
         # 显卡已并进「显示与网络」，主机名与「计算机名」重复、已删
         assert "主机名" not in page.row_net, "重复的「主机名」又加回去了"

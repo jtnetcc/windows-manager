@@ -80,8 +80,19 @@ def main() -> None:
                 row.btn_go.click()
                 break
         assert target, "没有任何不达标项带处理按钮"
-        assert window._current_page == target, (
-            f"点「处理」没跳页：期望 {target}，实际 {window._current_page}"
+        # 清理类页面已经并成「清理中心」的四个分段、注册表并进软件管理，
+        # FACTOR_PAGE 里仍写着老 key。这里按主窗口的翻译表算出最终落在哪一页。
+        from ui.main_window import CLEANUP_TARGETS, SOFTWARE_TARGETS
+
+        if target in CLEANUP_TARGETS:
+            resolved = "cleanup"
+        elif target in SOFTWARE_TARGETS:
+            resolved = "software"
+        else:
+            resolved = target
+        assert window._current_page == resolved, (
+            f"点「处理」没跳页：期望 {resolved}（原 key {target}），"
+            f"实际 {window._current_page}"
         )
         print(f"点「处理」→ {window._current_page} ✓")
 
@@ -89,9 +100,15 @@ def main() -> None:
         expected = next((item.page for item in report.advice if item.page), None)
         window.switch_page("health")
         if advice_btns and expected:
+            if expected in CLEANUP_TARGETS:
+                expected = "cleanup"
+            elif expected in SOFTWARE_TARGETS:
+                expected = "software"
             advice_btns[0].click()
             print(f"点建议行「去处理」→ {window._current_page} ✓")
-            assert window._current_page == expected, "建议行跳页不对"
+            assert window._current_page == expected, (
+                f"建议行跳页不对：期望 {expected}，实际 {window._current_page}"
+            )
         else:
             print("（本次没有带按钮的建议行，跳过）")
 
