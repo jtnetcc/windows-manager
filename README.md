@@ -116,9 +116,18 @@ python tools/releases.py --to 0.0.37  # 回滚到该版本
 
 ## 推送代码
 
-本机 `github.com` 被代理拦断，`git push` 不可用，改走 REST API：
+本机的 HTTP 代理对 `github.com` 一律返回 502，**直连 `git push` 必失败**。
+仓库已配好走本机 SOCKS5（v2ray / clash 之类），`git push` 直接可用：
 
 ```bash
+git config --local http.proxy        # 应为 socks5h://127.0.0.1:10808
+git push origin main
+```
+
+SOCKS5 没开（推上去会 502）时，去掉仓库级配置改走 REST API：
+
+```bash
+git config --local --unset http.proxy
 set GH_TOKEN=ghp_xxx
 python tools/push_github.py --repo jtnetcc/windows-manager -m "feat: xxx"
 ```
