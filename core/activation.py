@@ -21,15 +21,12 @@ from __future__ import annotations
 import calendar
 import os
 import re
-import subprocess
 import threading
 import time
 from dataclasses import dataclass
 
 from .sysinfo import reg
-from . import applog
-
-CREATE_NO_WINDOW = 0x08000000
+from . import applog, syscmd
 
 _SYSTEM_ROOT = os.environ.get("SystemRoot") or r"C:\Windows"
 _CSCRIPT = os.path.join(_SYSTEM_ROOT, "System32", "cscript.exe")
@@ -123,18 +120,11 @@ def _decode(raw: bytes) -> str:
 def _run_slmgr() -> str:
     if not os.path.isfile(_SLMGR):
         return ""
-    try:
-        proc = subprocess.run(
-            [_CSCRIPT, "//nologo", _SLMGR, "/dlv"],
-            capture_output=True,
-            stdin=subprocess.DEVNULL,
-            timeout=25,
-            creationflags=CREATE_NO_WINDOW,
-        )
-    except (OSError, subprocess.SubprocessError):
+    code, raw = syscmd.run_bytes([_CSCRIPT, "//nologo", _SLMGR, "/dlv"], timeout=25)
+    if code == -1:
         return ""
     # 未激活时 slmgr 也返回 0，只是内容不同，所以不看返回码
-    return _decode(proc.stdout)
+    return _decode(raw)
 
 
 def _parse(text: str) -> dict[str, str]:

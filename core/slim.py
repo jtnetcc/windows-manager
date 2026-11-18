@@ -15,11 +15,11 @@
 from __future__ import annotations
 
 import os
-import subprocess
 import winreg
 from dataclasses import dataclass
 from typing import Callable
 
+from . import spacemeasure, syscmd
 from .winpath import HKCU, HKLM, hive, system_drive
 from . import applog
 
@@ -100,23 +100,8 @@ def _flags(pairs: list[tuple[str, str, int]]):
 
 
 def _run(*args: str, timeout: int = 60) -> tuple[int, str]:
-    """跑一条系统命令，返回 (退出码, 合并后的输出)。"""
-    try:
-        done = subprocess.run(
-            list(args),
-            capture_output=True,
-            text=True,
-            encoding="mbcs",
-            errors="replace",
-            timeout=timeout,
-            creationflags=CREATE_NO_WINDOW,
-        )
-        text = (done.stdout or "") + (done.stderr or "")
-        return done.returncode, text.strip()
-    except subprocess.TimeoutExpired:
-        return -1, "命令超时"
-    except OSError as exc:
-        return -1, str(exc)
+    """跑一条系统命令。实现统一在 `core/syscmd.py`（隐藏窗口 / 超时 / 解码）。"""
+    return syscmd.run(args, timeout=timeout)
 
 
 def _sc(*args: str) -> None:
@@ -344,23 +329,12 @@ def disabled_count() -> int:
 
 
 def _walk_size(path: str, limit: int = 60000) -> int:
-    """目录体积。带文件数上限：Windows.old 能有十几万个文件，全走一遍要好几秒。"""
-    total = 0
-    seen = 0
-    for root, _dirs, files in os.walk(path, onerror=lambda _e: None):
-        for name in files:
-            try:
-                total += os.path.getsize(os.path.join(root, name))
-            except OSError:
-                continue
-            seen += 1
-            if seen >= limit:
-                return total
-    return total
+    """目录体积。实现与口径统一在 `spacemeasure.dir_size`。"""
+    return spacemeasure.dir_size(path, limit)
 
 
 def hiberfil_path() -> str:
-    return system_drive() + "hiberfil.sys"
+    return spacemeasure.hiberfil_path()
 
 
 def hibernation_on() -> bool:
@@ -371,10 +345,7 @@ def hibernation_on() -> bool:
 
 
 def _hiber_size() -> int:
-    try:
-        return os.path.getsize(hiberfil_path())
-    except OSError:
-        return 0
+    return spacemeasure.hibernation_size()
 
 
 def _hiber_off() -> tuple[int, str]:
@@ -390,12 +361,11 @@ def _hiber_on() -> None:
 
 
 def _windows_old() -> str:
-    return system_drive() + "Windows.old"
+    return spacemeasure.windows_old_path()
 
 
 def _old_size() -> int:
-    path = _windows_old()
-    return _walk_size(path) if os.path.isdir(path) else 0
+    return spacemeasure.windows_old_size()
 
 
 def _old_clear() -> tuple[int, str]:
@@ -414,22 +384,11 @@ def _old_clear() -> tuple[int, str]:
 
 
 def _dump_files() -> list[str]:
-    windir = os.environ.get("WINDIR", r"C:\Windows")
-    out = [os.path.join(windir, "MEMORY.DMP")]
-    mini = os.path.join(windir, "Minidump")
-    if os.path.isdir(mini):
-        out += [os.path.join(mini, name) for name in os.listdir(mini)]
-    return [path for path in out if os.path.isfile(path)]
+    return spacemeasure.dump_files()
 
 
 def _dump_size() -> int:
-    total = 0
-    for path in _dump_files():
-        try:
-            total += os.path.getsize(path)
-        except OSError:
-            continue
-    return total
+    return spacemeasure.dump_size()
 
 
 def _dump_clear() -> tuple[int, str]:

@@ -61,8 +61,8 @@ python main.py
 自检（不真删文件，验证数据往返与界面交互）：
 
 ```bash
-python tools/check_startup.py     # 启动、导航、关于页、系统信息
-python tools/check_health_nav.py  # 体检「处理」跳转
+python tools/check_all.py         # 16 个自检脚本一键跑（约 2 分钟）
+python tools/check_all.py --headless   # CI 用，跳过会真装卸/依赖托盘的 3 条
 python -m compileall -q core ui main.py
 ```
 
@@ -108,7 +108,7 @@ python tools/releases.py --to 0.0.37  # 回滚到该版本
 
 ## 文档
 
-- [`docs/交接文档.md`](docs/交接文档.md) —— 架构、设计决策、踩过的坑（**改动前先读**，2200 行）
+- [`docs/交接文档.md`](docs/交接文档.md) —— 架构、设计决策、踩过的坑（**改动前先读**，2400 行）
 - [`docs/打包说明.md`](docs/打包说明.md) —— Windows 便携版/安装包、签名与 CI
 - [`docs/待接入排查与下步方案.md`](docs/待接入排查与下步方案.md) —— 未完成项与优先级
 - [`docs/整改方案.md`](docs/整改方案.md) —— 重构路线图

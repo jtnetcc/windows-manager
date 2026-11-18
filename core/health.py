@@ -11,10 +11,9 @@
 from __future__ import annotations
 
 import os
-import subprocess
 import time
 from dataclasses import dataclass, field, replace
-from . import applog
+from . import applog, syscmd
 
 GB = 1024 ** 3
 
@@ -473,17 +472,12 @@ def _trim_enabled() -> bool | None:
     注意：`DisableDeleteNotify = 0` 表示「禁用删除通知」这一项是关的，
     也就是 **TRIM 已开启**。中文输出会显示「已禁用」，直接读文字会判断反。
     """
-    try:
-        result = subprocess.run(
-            ["fsutil", "behavior", "query", "DisableDeleteNotify"],
-            capture_output=True,
-            timeout=5,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        )
-    except (OSError, subprocess.SubprocessError):
+    code, raw = syscmd.run_bytes(
+        ["fsutil", "behavior", "query", "DisableDeleteNotify"], timeout=5
+    )
+    if code == -1:
         return None
 
-    raw = result.stdout or b""
     for encoding in ("mbcs", "utf-8", "gbk"):
         try:
             text = raw.decode(encoding)

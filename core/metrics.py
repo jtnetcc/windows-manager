@@ -8,13 +8,12 @@ from __future__ import annotations
 
 import shutil
 import socket
-import subprocess
 import time
 from dataclasses import dataclass
 
 import psutil
 
-from . import winmem, winpath
+from . import syscmd, winmem, winpath
 from . import applog
 
 MB = 1024 * 1024
@@ -289,21 +288,19 @@ class MetricsCollector:
     def _gpu(self) -> GpuMetrics | None:
         if not self._gpu_available:
             return None
+        code, text = syscmd.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=name,utilization.gpu,memory.used,memory.total",
+                "--format=csv,noheader,nounits",
+            ],
+            timeout=2,
+            encoding="utf-8",
+        )
+        if code != 0 or not text.strip():
+            return None
         try:
-            out = subprocess.run(
-                [
-                    "nvidia-smi",
-                    "--query-gpu=name,utilization.gpu,memory.used,memory.total",
-                    "--format=csv,noheader,nounits",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=2,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            )
-            if out.returncode != 0 or not out.stdout.strip():
-                return None
-            first = out.stdout.strip().splitlines()[0]
+            first = text.strip().splitlines()[0]
             name, util, mem_used, mem_total = [p.strip() for p in first.split(",")]
             return GpuMetrics(
                 name=name,

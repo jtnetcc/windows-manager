@@ -16,13 +16,13 @@
 from __future__ import annotations
 
 import os
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 from . import winpath
 from . import applog
+from . import syscmd
 
 DISABLED_SUFFIX = ".off"
 
@@ -239,23 +239,13 @@ def _set_folder_enabled(entry_id: str, enabled: bool) -> tuple[bool, str]:
 def _run_schtasks(args: list[str]) -> str | None:
     """跑 schtasks。**失败返回 None，不是空串** —— 空串会一路传成「没有任务」，
     用户看到的是「这台机器没有第三方计划任务」，而实际是命令跑不起来。"""
-    creation = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    try:
-        result = subprocess.run(
-            ["schtasks", *args],
-            capture_output=True,
-            timeout=10,
-            creationflags=creation,
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        applog.logger("startup").warning("schtasks 无法执行：%s", exc)
+    code, raw = syscmd.run_bytes(["schtasks", *args], timeout=10)
+    if code == -1:
+        applog.logger("startup").warning("schtasks 无法执行：命令超时或不可用")
         return None
-    if result.returncode != 0:
-        applog.logger("startup").warning(
-            "schtasks 退出码 %s", result.returncode
-        )
+    if code != 0:
+        applog.logger("startup").warning("schtasks 退出码 %s", code)
         return None
-    raw = result.stdout or b""
     for encoding in ("mbcs", "utf-8", "gbk"):
         try:
             return raw.decode(encoding)

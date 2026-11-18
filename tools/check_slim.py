@@ -45,9 +45,12 @@ def check_core() -> None:
     print(f"search_web 往返正常（原值 {before}）")
 
     if not winmem.is_admin():
+        # 断言要和「当前值」比，不能写死 True：这台机器上自动更新可能本来就是关的，
+        # 写死会变成一条与环境耦合的假失败（v0.0.59 修）。
+        before_update = slim.BY_KEY["update_auto"].read()
         err = slim.apply("update_auto", False)
         assert "管理员" in err, f"非管理员应提示权限，实际：{err!r}"
-        assert slim.BY_KEY["update_auto"].read() is True, "失败后状态被改了"
+        assert slim.BY_KEY["update_auto"].read() == before_update, "失败后状态被改了"
         print("非管理员时拒绝写入，状态未被改动")
 
     sizes = slim.scan()

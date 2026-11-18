@@ -17,14 +17,16 @@
 
 from __future__ import annotations
 
-import subprocess
 import threading
 import time
 from dataclasses import dataclass
 
 from . import applog
+from . import syscmd
 
-CREATE_NO_WINDOW = 0x08000000
+# 命令名单独拎出来：调用统一走 syscmd，那里已经带 CREATE_NO_WINDOW
+_PWSH = "powershell"
+
 CACHE_SECONDS = 300.0
 
 # 制表符分隔、无表头：字段顺序写死，不受系统语言影响。
@@ -92,24 +94,20 @@ def _run() -> str:
     页面据此决定说「未检测到物理磁盘」还是「读取失败」。
     """
     global _last_error
-    try:
-        proc = subprocess.run(
-            ["powershell", "-NoProfile", "-NonInteractive", "-Command", _SCRIPT],
-            capture_output=True,
-            stdin=subprocess.DEVNULL,
-            timeout=25,
-            creationflags=CREATE_NO_WINDOW,
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        _last_error = f"PowerShell 无法执行：{exc}"
-        applog.logger("diskinfo").warning("PowerShell 无法执行", exc_info=True)
+    code, raw = syscmd.run_bytes(
+        [_PWSH, "-NoProfile", "-NonInteractive", "-Command", _SCRIPT],
+        timeout=25,
+    )
+    if code == -1:
+        _last_error = "PowerShell 无法执行（超时或不可用）"
+        applog.logger("diskinfo").warning(_last_error)
         return ""
-    if proc.returncode != 0 and not proc.stdout:
-        _last_error = f"PowerShell 退出码 {proc.returncode}"
+    if code != 0 and not raw:
+        _last_error = f"PowerShell 退出码 {code}"
         applog.logger("diskinfo").warning(_last_error)
         return ""
     _last_error = ""
-    return _decode(proc.stdout)
+    return _decode(raw)
 
 
 def _parse(text: str) -> list[Disk]:

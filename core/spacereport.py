@@ -18,8 +18,7 @@ import os
 import re
 from dataclasses import dataclass
 
-from . import dirstat, recycle
-from .slim import _run as run_cmd
+from . import dirstat, recycle, spacemeasure, syscmd
 
 @dataclass
 class Reclaim:
@@ -62,16 +61,6 @@ def _drive() -> str:
     return os.environ.get("SystemDrive", "C:") + "\\"
 
 
-def _file_size(*names: str) -> int:
-    total = 0
-    for name in names:
-        try:
-            total += os.path.getsize(os.path.join(_drive(), name))
-        except OSError:
-            continue
-    return total
-
-
 def _dir_size(path: str, should_stop=lambda: False) -> int:
     """目录总体积。走 dirstat 的遍历器，比 os.walk + stat 快且不漏。"""
     if not os.path.isdir(path):
@@ -90,7 +79,7 @@ def _local(name: str) -> str:
 
 
 def _hibernation() -> Reclaim | None:
-    size = _file_size("hiberfil.sys")
+    size = spacemeasure.hibernation_size()
     if not size:
         return None
     return Reclaim(
@@ -108,7 +97,7 @@ def _hibernation() -> Reclaim | None:
 
 
 def _pagefile() -> Reclaim | None:
-    size = _file_size("pagefile.sys", "swapfile.sys")
+    size = spacemeasure.pagefile_size()
     if not size:
         return None
     return Reclaim(
@@ -123,9 +112,7 @@ def _pagefile() -> Reclaim | None:
 
 
 def _dump() -> Reclaim | None:
-    from .slim import _dump_size
-
-    size = _dump_size()
+    size = spacemeasure.dump_size()
     if not size:
         return None
     return Reclaim(
@@ -139,9 +126,7 @@ def _dump() -> Reclaim | None:
 
 
 def _windows_old(should_stop=lambda: False) -> Reclaim | None:
-    from .slim import _old_size
-
-    size = _old_size()
+    size = spacemeasure.windows_old_size()
     if not size:
         return None
     return Reclaim(
@@ -284,7 +269,7 @@ def _recycle_bin(should_stop=lambda: False) -> Reclaim | None:
 
 def _restore_points() -> Reclaim | None:
     """系统还原点占用。走 vssadmin，需要管理员；输出随系统语言变，只抓数字。"""
-    code, text = run_cmd(os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "System32",
+    code, text = syscmd.run(os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "System32",
                                       "vssadmin.exe"), "list", "shadowstorage", timeout=25)
     if code != 0 or not text:
         return None
@@ -315,7 +300,7 @@ def _restore_points() -> Reclaim | None:
 
 def _component_store() -> Reclaim | None:
     """WinSxS 可回收量。DISM 要跑 30~60 秒，只在用户主动点「深入分析」时做。"""
-    code, text = run_cmd(os.path.join(_drive(), "Windows", "System32", "Dism.exe"),
+    code, text = syscmd.run(os.path.join(_drive(), "Windows", "System32", "Dism.exe"),
                          "/Online", "/Cleanup-Image", "/AnalyzeComponentStore",
                          timeout=300)
     if not text:
@@ -457,7 +442,7 @@ def execute(cmd: tuple[str, ...], timeout: int = 180) -> tuple[int, str]:
     """
     if not cmd:
         return 1, ""
-    return run_cmd(*cmd, timeout=timeout)
+    return syscmd.run(*cmd, timeout=timeout)
 
 
 def collect_one(key: str, should_stop=lambda: False) -> Reclaim | None:

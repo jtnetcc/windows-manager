@@ -137,42 +137,61 @@ class ProcessPage(QWidget):
 
         self.table.setUpdatesEnabled(False)
         scroll = self.table.verticalScrollBar().value()
-        self.table.setRowCount(len(rows))
-
+        if self.table.rowCount() != len(rows):
+            self.table.setRowCount(len(rows))
         for index, row in enumerate(rows):
-            name_item = QTableWidgetItem(row["name"])
-            name_item.setData(Qt.UserRole, row["pid"])
-            name_item.setFont(font(12))
-            if row["pid"] in self._leaks:
-                name_item.setForeground(QColor(T.AMBER))
-                name_item.setToolTip("该进程内存持续增长，疑似泄漏")
-            self.table.setItem(index, 0, name_item)
-
-            pid_item = QTableWidgetItem(str(row["pid"]))
-            pid_item.setFont(font(11))
-            pid_item.setForeground(QColor(T.TEXT_DIM))
-            self.table.setItem(index, 1, pid_item)
-
-            cpu = row.get("cpu", 0.0)
-            cpu_item = QTableWidgetItem(f"{cpu:.1f}%")
-            cpu_item.setFont(font(11))
-            cpu_item.setForeground(QColor(T.AMBER if cpu >= 25 else T.TEXT_SUB))
-            self.table.setItem(index, 2, cpu_item)
-
-            mem_item = QTableWidgetItem(winmem.fmt_size(row["memory"]))
-            mem_item.setFont(font(12))
-            self.table.setItem(index, 3, mem_item)
-
-            share_item = QTableWidgetItem("")
-            share = (row["memory"] / self._total * 100.0) if self._total else 0.0
-            share_item.setData(Qt.UserRole, share)
-            self.table.setItem(index, 4, share_item)
+            self._paint_row(index, row)
 
         self.table.verticalScrollBar().setValue(scroll)
         self.table.setUpdatesEnabled(True)
 
         suffix = f" / {len(self._rows)}" if keyword else ""
         self.lbl_count.setText(f"{len(rows)}{suffix} 个进程")
+
+    def _paint_row(self, index: int, row: dict) -> None:
+        """填充/复用一行。
+
+        进程表每 3 秒刷一次，120 行 × 5 列 = 600 个 QTableWidgetItem。
+        每次全新建对象既费内存又费 GC，滚动时还容易掉帧 —— 行数没变就复用，
+        只改文字和数据。字体只在建对象时设一次，颜色每次更新（泄漏标记会变）。
+        """
+        name_item = self._cell(index, 0, font(12))
+        name_item.setText(row["name"])
+        name_item.setData(Qt.UserRole, row["pid"])
+        if row["pid"] in self._leaks:
+            name_item.setForeground(QColor(T.AMBER))
+            name_item.setToolTip("该进程内存持续增长，疑似泄漏")
+        else:
+            name_item.setForeground(QColor(T.TEXT))
+            name_item.setToolTip("")
+
+        pid_item = self._cell(index, 1, font(11), QColor(T.TEXT_DIM))
+        pid_item.setText(str(row["pid"]))
+
+        cpu = row.get("cpu", 0.0)
+        cpu_item = self._cell(index, 2, font(11))
+        cpu_item.setText(f"{cpu:.1f}%")
+        cpu_item.setForeground(QColor(T.AMBER if cpu >= 25 else T.TEXT_SUB))
+
+        mem_item = self._cell(index, 3, font(12))
+        mem_item.setText(winmem.fmt_size(row["memory"]))
+
+        share_item = self._cell(index, 4, font(11))
+        share = (row["memory"] / self._total * 100.0) if self._total else 0.0
+        share_item.setData(Qt.UserRole, share)
+
+    def _cell(
+        self, index: int, column: int, cell_font, color: QColor | None = None
+    ) -> QTableWidgetItem:
+        """取第 index 行第 column 列的单元格，没有就建一个（并设好字体/颜色）。"""
+        item = self.table.item(index, column)
+        if item is None:
+            item = QTableWidgetItem("")
+            item.setFont(cell_font)
+            if color is not None:
+                item.setForeground(color)
+            self.table.setItem(index, column, item)
+        return item
 
     # ---------------------------------------------------------- 交互
 

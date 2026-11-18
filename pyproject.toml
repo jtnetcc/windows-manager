@@ -1,0 +1,18 @@
+# 项目配置：只管静态检查，不参与打包（打包走 tools/build*.py）。
+
+[tool.ruff]
+# 代码里用了 X | None 这类写法，3.10 起才支持
+target-version = "py310"
+line-length = 100
+extend-exclude = ["build", "dist", "dist_pending", "releases", "_reference", "docs"]
+
+[tool.ruff.lint]
+# 只开「一定是错误」的规则：语法错误 + 未定义名字 + f-string 明显写错。
+# 不启用风格类规则（E501/UP 等）—— 这个项目的注释很长，风格规则会把
+# 真正的问题淹掉，等以后单独排期再收紧。
+select = ["E9", "F63", "F7", "F82"]
+
+[tool.ruff.lint.per-file-ignores]
+# 自检脚本大量使用 assert，ruff 会把 assert 当可疑写法（S101 在别的规则集里），
+# 这里不涉及；保留占位方便以后加规则时排除。
+"tools/check_*.py" = []
