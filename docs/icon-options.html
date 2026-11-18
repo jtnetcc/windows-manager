@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>图标方案 · 5 版</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 40px 32px 64px;
+    background: #F4F6F9; color: #16181D;
+    font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 24px; margin: 0 0 6px; letter-spacing: .2px; }
+  .sub { color: #5B6472; font-size: 13px; margin: 0 0 28px; line-height: 1.7; }
+  .sub code { background: #E7EBF1; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+
+  .strip {
+    background: #1F2126; border-radius: 12px; padding: 10px 14px;
+    display: flex; align-items: center; gap: 14px; margin-bottom: 30px;
+    box-shadow: 0 8px 24px rgba(16,24,40,.14);
+  }
+  .strip .lbl { color: #9AA3AF; font-size: 11px; letter-spacing: 1px; margin-right: 4px; }
+  .strip svg { width: 32px; height: 32px; display: block; }
+  .strip .sep { width: 1px; height: 28px; background: #33373D; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 20px; }
+  .card {
+    background: #fff; border-radius: 14px; padding: 22px 22px 18px;
+    box-shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 20px rgba(16,24,40,.05);
+    display: flex; flex-direction: column;
+  }
+  .head { display: flex; align-items: flex-start; gap: 18px; }
+  .big svg { width: 104px; height: 104px; display: block; }
+  .meta h2 { font-size: 15px; margin: 4px 0 4px; font-weight: 600; }
+  .meta .tag {
+    display: inline-block; font-size: 11px; color: #0F766E; background: #D6F5F0;
+    border-radius: 999px; padding: 2px 9px; margin-bottom: 8px; letter-spacing: .3px;
+  }
+  .meta p { font-size: 12px; color: #5B6472; line-height: 1.65; margin: 0; }
+
+  .sizes { display: flex; align-items: flex-end; gap: 18px; margin-top: 20px; padding-top: 16px; border-top: 1px solid #EDF0F4; }
+  .sizes .item { text-align: center; }
+  .sizes svg { display: block; margin: 0 auto 6px; }
+  .sizes .n { font-size: 10px; color: #98A1AE; }
+
+  .darkrow {
+    margin-top: 14px; background: #1F2126; border-radius: 10px;
+    padding: 10px 14px; display: flex; align-items: center; gap: 12px;
+  }
+  .darkrow svg { display: block; }
+  .darkrow .cap { color: #8C94A0; font-size: 10px; margin-left: auto; letter-spacing: .5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>图标方案 · 5 版</h1>
+  <p class="sub">
+    统一规格：256 画布、Win11 圆角方块（半径 22%）、四周留 2px 透明边。<br>
+    下面每个方案都给了 104 / 64 / 48 / 32 / 16 五档，最后一排是深色任务栏上的实际观感 ——
+    16px 能不能认出来，是这一轮唯一要过的关。
+  </p>
+
+  <div class="strip">
+    <span class="lbl">任务栏</span>
+    <!-- 1 循环环 -->
+    <svg viewBox="0 0 256 256" aria-label="循环环">
+      <defs><linearGradient id="s1" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#3A9BF2"/><stop offset="1" stop-color="#0A4E90"/></linearGradient></defs>
+      <rect x="4" y="4" width="248" height="248" rx="56" fill="url(#s1)"/>
+      <path d="M120 48 A80 80 0 1 0 192 96" fill="none" stroke="#fff" stroke-width="28" stroke-linecap="butt"/>
+<path d="M118 42 L192 76 L140 110 Z" fill="#2DD4BF" stroke="#2DD4BF" stroke-width="8" stroke-linejoin="round"/>
+    </svg>
+    <!-- 2 盾牌 -->
+    <svg viewBox="0 0 256 256" aria-label="盾牌">
+      <defs><linearGradient id="s2" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#2DD4BF"/><stop offset="1" stop-color="#0B4E8C"/></linearGradient></defs>
+      <rect x="4" y="4" width="248" height="248" rx="56" fill="url(#s2)"/>
+      <path d="M128 40 L200 68 L200 130 C200 178 170 208 128 220 C86 208 56 178 56 130 L56 68 Z"
+            fill="#fff" stroke="#fff" stroke-width="16" stroke-linejoin="round"/>
+      <path d="M92 132 L114 156 L168 100" fill="none" stroke="#0E9F92" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <!-- 3 内存条 -->
+    <svg viewBox="0 0 256 256" aria-label="内存条">
+      <defs><linearGradient id="s3" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#1B2B4E"/><stop offset="1" stop-color="#0A1120"/></linearGradient></defs>
+      <rect x="4" y="4" width="248" height="248" rx="56" fill="url(#s3)"/>
+      <rect x="40" y="88" width="176" height="84" rx="16" fill="#fff"/>
+<rect x="64" y="106" width="32" height="32" rx="8" fill="#2DD4BF"/>
+<rect x="112" y="106" width="32" height="32" rx="8" fill="#2DD4BF"/>
+<rect x="160" y="106" width="32" height="32" rx="8" fill="#2DD4BF"/>
+<rect x="40" y="152" width="176" height="8" fill="#0A1120" fill-opacity=".35"/>
+    </svg>
+    <!-- 4 闪电 -->
+    <svg viewBox="0 0 256 256" aria-label="闪电">
+      <defs><linearGradient id="s4" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#22304F"/><stop offset="1" stop-color="#0B1220"/></linearGradient>
+        <linearGradient id="s4b" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#FFD166"/><stop offset="1" stop-color="#F59E0B"/></linearGradient></defs>
+      <rect x="4" y="4" width="248" height="248" rx="56" fill="url(#s4)"/>
+      <path d="M150 34 L82 142 L122 142 L106 222 L176 106 L134 106 Z"
+            fill="url(#s4b)" stroke="url(#s4b)" stroke-width="16" stroke-linejoin="round"/>
+    </svg>
+    <!-- 5 星芒 -->
+    <svg viewBox="0 0 256 256" aria-label="星芒">
+      <defs><linearGradient id="s5" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#12857C"/><stop offset="1" stop-color="#08303F"/></linearGradient></defs>
+      <rect x="4" y="4" width="248" height="248" rx="56" fill="url(#s5)"/>
+      <path d="M128 38 C137 96 160 119 218 128 C160 137 137 160 128 218 C119 160 96 137 38 128 C96 119 119 96 128 38 Z" fill="#fff"/>
+<circle cx="196" cy="58" r="15" fill="#2DD4BF"/>
+    </svg>
+  </div>
+
+  <div class="grid">
+
+    <!-- ============ 1 ============ -->
+    <div class="card">
+      <div class="head">
+        <div class="big">
+          <svg viewBox="0 0 256 256">
+            <defs><linearGradient id="a1" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#3A9BF2"/><stop offset="1" stop-color="#0A4E90"/></linearGradient></defs>
+            <rect x="4" y="4" width="248" height="248" rx="56" fill="url(#a1)"/>
+            <path d="M120 48 A80 80 0 1 0 192 96" fill="none" stroke="#fff" stroke-width="28" stroke-linecap="butt"/>
+<path d="M118 42 L192 76 L140 110 Z" fill="#2DD4BF" stroke="#2DD4BF" stroke-width="8" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="meta">
+          <span class="tag">一键优化</span>
+          <h2>01　循环环</h2>
+          <p>一个白环 + 一个青绿箭头，是「跑一次优化」最短的表达。删掉指针和刻度后只剩两个元素，边缘干净、缩小不糊。<br>代价：偏「刷新」，也可能被当成同步或重试按钮。</p>
+        </div>
+      </div>
+      <div class="sizes">
+        <div class="item"><svg viewBox="0 0 256 256" width="64" height="64"><use href="#n1"/></svg><div class="n">64</div></div>
+        <div class="item"><svg viewBox="0 0 256 256" width="48" height="48"><use href="#n1"/></svg><div class="n">48</div></div>
+        <div class="item"><svg viewBox="0 0 256 256" width="32" height="32"><use href="#n1"/></svg><div class="n">32</div></div>
+        <div class="item"><svg viewBox="0 0 256 256" width="16" height="16"><use href="#n1"/></svg><div class="n">16</div></div>
+      </div>
+      <div class="darkrow">
+        <svg viewBox="0 0 256 256" width="48" height="48"><use href="#n1"/></svg>
+        <svg viewBox="0 0 256 256" width="32" height="32"><use href="#n1"/></svg>
+        <svg viewBox="0 0 256 256" width="24" height="24"><use href="#n1"/></svg>
+        <svg viewBox="0 0 256 256" width="16" height="16"><use href="#n1"/></svg>
+        <span class="cap">深色任务栏</span>
+      </div>
+      <svg width="0" height="0" style="position:absolute">
+        <defs>
+          <linearGradient id="a1b" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#3A9BF2"/><stop offset="1" stop-color="#0A4E90"/></linearGradient>
+          <g id="n1">
+            <rect x="4" y="4" width="248" height="248" rx="56" fill="url(#a1b)"/>
+            <path d="M120 48 A80 80 0 1 0 192 96" fill="none" stroke="#fff" stroke-width="28" stroke-linecap="butt"/>
+<path d="M118 42 L192 76 L140 110 Z" fill="#2DD4BF" stroke="#2DD4BF" stroke-width="8" stroke-linejoin="round"/>
+          </g>
+        </defs>
+      </svg>
+    </div>
+
+    <!-- ============ 2 ============ -->
+    <div class="card">
+      <div class="head">
+        <div class="big">
+          <svg viewBox="0 0 256 256">
+            <defs><linearGradient id="a2" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#2DD4BF"/><stop offset="1" stop-color="#0B4E8C"/></linearGradient></defs>
+            <rect x="4" y="4" width="248" height="248" rx="56" fill="url(#a2)"/>
+            <path d="M128 40 L200 68 L200 130 C200 178 170 208 128 220 C86 208 56 178 56 130 L56 68 Z"
+                  fill="#fff" stroke="#fff" stroke-width="16" stroke-linejoin="round"/>
+            <path d="M92 132 L114 156 L168 100" fill="none" stroke="#0E9F92" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="meta">
+          <span class="tag">守护语义</span>
+          <h2>02　盾牌对勾</h2>
+          <p>盾 = 守住系统，对勾 = 一切正常。轮廓最实，是五版里 16px 最清楚的。<br>代价是「盾」多半指向杀毒，和「清理加速」的联想没那么直接。</p>
+        </div>
+      </div>
+      <div class="sizes">
+        <div class="item"><svg viewBox="0 0 256 256" width="64" height="64"><use href="#n2"/></svg><div class="n">64</div></div>
+        <div class="item"><svg viewBox="0 0 256 256" width="48" height="48"><use href="#n2"/></svg><div class="n">48</div></div>
+        <div class="item"><svg viewBox="0 0 256 256" width="32" height="32"><use href="#n2"/></svg><div class="n">32</div></div>
+        <div class="item"><svg viewBox="0 0 256 256" width="16" height="16"><use href="#n2"/></svg><div class="n">16</div></div>
+      </div>
+      <div class="darkrow">
+        <svg viewBox="0 0 256 256" width="48" height="48"><use href="#n2"/></svg>
+        <svg viewBox="0 0 256 256" width="32" height="32"><use href="#n2"/></svg>
+        <svg viewBox="0 0 256 256" width="24" height="24"><use href="#n2"/></svg>
+        <svg viewBox="0 0 256 256" width="16" height="16"><use href="#n2"/></svg>
+        <span class="cap">深色任务栏</span>
+      </div>
+      <svg width="0" height="0" style="position:absolute">
+        <defs>
+          <linearGradient id="a2b" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#2DD4BF"/><stop offset="1" stop-color="#0B4E8C"/></linearGradient>
+          <g id="n2">
+            <rect x="4" y="4" width="248" height="248" rx="56" fill="url(#a2b)"/>
+            <path d="M128 40 L200 68 L200 130 C200 178 170 208 128 220 C86 208 56 178 56 130 L56 68 Z"
+                  fill="#fff" stroke="#fff" stroke-width="16" stroke-linejoin="round"/>
+            <path d="M92 132 L114 156 L168 100" fill="none" stroke="#0E9F92" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+          </g>
+        </defs>
+      </svg>
+    </div>
+
+    <!-- ============ 3 ============ -->
+    <div class="card">
+      <div class="head">
+        <div class="big">
+          <svg viewBox="0 0 256 256">
+            <defs><linearGradient id="a3" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#1B2B4E"/><stop offset="1" stop-color="#0A1120"/></linearGradient></defs>
+            <rect x="4" y="4" width="248" height="248" rx="56" fill="url(#a3)"/>
+            <rect x="40" y="88" width="176" height="84" rx="16" fill="#fff"/>
+<rect x="64" y="106" width="32" height="32" rx="8" fill="#2DD4BF"/>
+<rect x="112" y="106" width="32" height="32" rx="8" fill="#2DD4BF"/>
+<rect x="160" y="106" width="32" height="32" rx="8" fill="#2DD4BF"/>
+<rect x="40" y="152" width="176" height="8" fill="#0A1120" fill-opacity=".35"/>
+          </svg>
+        </div>
+        <div class="meta">
+          <span class="tag">内存专用</span>
+          <h2>03　内存条</h2>
+          <p>直接画一根内存：白条 + 三块青绿颗粒，底下那道深色槽是接口。软件最核心的活就是管内存，这个形状在同类软件里也不撞。<br>代价：不如四格那样一眼「这是 Windows」。</p>
+        </div>
+      </div>
+      <div class="sizes">
+        <div class="item"><svg viewBox="0 0 256 256" width="64" height="64"><use href="#n3"/></svg><div class="n">64</div></div>
+        <div class="item"><svg viewBox="0 0 256 256" width="48" height="48"><use href="#n3"/></svg><div class="n">48</div></div>
+        <div class="item"><svg viewBox="0 0 256 256" width="32" height="32"><use href="#n3"/></svg><div class="n">32</div></div>
+        <div class="item"><svg viewBox="0 0 256 256" width="16" height="16"><use href="#n3"/></svg><div class="n">16</div></div>
+      </div>
+      <div class="darkrow">
+        <svg viewBox="0 0 256 256" width="48" height="48"><use href="#n3"/></svg>
+        <svg viewBox="0 0 256 256" width="32" height="32"><use href="#n3"/></svg>
+        <svg viewBox="0 0 256 256" width="24" height="24"><use href="#n3"/></svg>
+        <svg viewBox="0 0 256 256" width="16" height="16"><use href="#n3"/></svg>
+        <span class="cap">深色任务栏</span>
+      </div>
+      <svg width="0" height="0" style="position:absolute">
+        <defs>
+          <linearGradient id="a3b" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#1B2B4E"/><stop offset="1" stop-color="#0A1120"/></linearGradient>
+          <g id="n3">
+            <rect x="4" y="4" width="248" height="248" rx="56" fill="url(#a3b)"/>
+            <rect x="40" y="88" width="176" height="84" rx="16" fill="#fff"/>
+<rect x="64" y="106" width="32" height="32" rx="8" fill="#2DD4BF"/>
+<rect x="112" y="106" width="32" height="32" rx="8" fill="#2DD4BF"/>
+<rect x="160" y="106" width="32" height="32" rx="8" fill="#2DD4BF"/>
+<rect x="40" y="152" width="176" height="8" fill="#0A1120" fill-opacity=".35"/>
+          </g>
+        </defs>
+      </svg>
+    </div>
+
+    <!-- ============ 4 ============ -->
+    <div class="card">
+      <div class="head">
+        <div class="big">
+          <svg viewBox="0 0 256 256">
+            <defs><linearGradient id="a4" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#22304F"/><stop offset="1" stop-color="#0B1220"/></linearGradient>
+              <linearGradient id="a4b" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#FFD166"/><stop offset="1" stop-color="#F59E0B"/></linearGradient></defs>
+            <rect x="4" y="4" width="248" height="248" rx="56" fill="url(#a4)"/>
+            <path d="M150 34 L82 142 L122 142 L106 222 L176 106 L134 106 Z"
+                  fill="url(#a4b)" stroke="url(#a4b)" stroke-width="16" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="meta">
+          <span class="tag">提速语义 · 最跳</span>
+          <h2>04　闪电</h2>
+          <p>琥珀色在蓝灰任务栏里最扎眼，缩到 16px 也还是一个亮点，不会糊成一团。<br>缺点：闪电被用滥了，容易被当成充电或网络加速器。</p>
+        </div>
+      </div>
+      <div class="sizes">
+        <div class="item"><svg viewBox="0 0 256 256" width="64" height="64"><use href="#n4"/></svg><div class="n">64</div></div>
+        <div class="item"><svg viewBox="0 0 256 256" width="48" height="48"><use href="#n4"/></svg><div class="n">48</div></div>
+        <div class="item"><svg viewBox="0 0 256 256" width="32" height="32"><use href="#n4"/></svg><div class="n">32</div></div>
+        <div class="item"><svg viewBox="0 0 256 256" width="16" height="16"><use href="#n4"/></svg><div class="n">16</div></div>
+      </div>
+      <div class="darkrow">
+        <svg viewBox="0 0 256 256" width="48" height="48"><use href="#n4"/></svg>
+        <svg viewBox="0 0 256 256" width="32" height="32"><use href="#n4"/></svg>
+        <svg viewBox="0 0 256 256" width="24" height="24"><use href="#n4"/></svg>
+        <svg viewBox="0 0 256 256" width="16" height="16"><use href="#n4"/></svg>
+        <span class="cap">深色任务栏</span>
+      </div>
+      <svg width="0" height="0" style="position:absolute">
+        <defs>
+          <linearGradient id="a4c" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#22304F"/><stop offset="1" stop-color="#0B1220"/></linearGradient>
+          <linearGradient id="a4d" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#FFD166"/><stop offset="1" stop-color="#F59E0B"/></linearGradient>
+          <g id="n4">
+            <rect x="4" y="4" width="248" height="248" rx="56" fill="url(#a4c)"/>
+            <path d="M150 34 L82 142 L122 142 L106 222 L176 106 L134 106 Z"
+                  fill="url(#a4d)" stroke="url(#a4d)" stroke-width="16" stroke-linejoin="round"/>
+          </g>
+        </defs>
+      </svg>
+    </div>
+
+    <!-- ============ 5 ============ -->
+    <div class="card">
+      <div class="head">
+        <div class="big">
+          <svg viewBox="0 0 256 256">
+            <defs><linearGradient id="a5" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#12857C"/><stop offset="1" stop-color="#08303F"/></linearGradient></defs>
+            <rect x="4" y="4" width="248" height="248" rx="56" fill="url(#a5)"/>
+            <path d="M128 38 C137 96 160 119 218 128 C160 137 137 160 128 218 C119 160 96 137 38 128 C96 119 119 96 128 38 Z" fill="#fff"/>
+<circle cx="196" cy="58" r="15" fill="#2DD4BF"/>
+          </svg>
+        </div>
+        <div class="meta">
+          <span class="tag">焕新语义</span>
+          <h2>05　星芒</h2>
+          <p>四角星是「清理完、焕然一新」的通用符号，形体单一、没有细节，16px 下仍然是一个清楚的星。<br>代价：气质偏「AI 焕新」，不如扫帚那样一看就知道在扫地。</p>
+        </div>
+      </div>
+      <div class="sizes">
+        <div class="item"><svg viewBox="0 0 256 256" width="64" height="64"><use href="#n5"/></svg><div class="n">64</div></div>
+        <div class="item"><svg viewBox="0 0 256 256" width="48" height="48"><use href="#n5"/></svg><div class="n">48</div></div>
+        <div class="item"><svg viewBox="0 0 256 256" width="32" height="32"><use href="#n5"/></svg><div class="n">32</div></div>
+        <div class="item"><svg viewBox="0 0 256 256" width="16" height="16"><use href="#n5"/></svg><div class="n">16</div></div>
+      </div>
+      <div class="darkrow">
+        <svg viewBox="0 0 256 256" width="48" height="48"><use href="#n5"/></svg>
+        <svg viewBox="0 0 256 256" width="32" height="32"><use href="#n5"/></svg>
+        <svg viewBox="0 0 256 256" width="24" height="24"><use href="#n5"/></svg>
+        <svg viewBox="0 0 256 256" width="16" height="16"><use href="#n5"/></svg>
+        <span class="cap">深色任务栏</span>
+      </div>
+      <svg width="0" height="0" style="position:absolute">
+        <defs>
+          <linearGradient id="a5b" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#12857C"/><stop offset="1" stop-color="#08303F"/></linearGradient>
+          <g id="n5">
+            <rect x="4" y="4" width="248" height="248" rx="56" fill="url(#a5b)"/>
+            <path d="M128 38 C137 96 160 119 218 128 C160 137 137 160 128 218 C119 160 96 137 38 128 C96 119 119 96 128 38 Z" fill="#fff"/>
+<circle cx="196" cy="58" r="15" fill="#2DD4BF"/>
+          </g>
+        </defs>
+      </svg>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>
