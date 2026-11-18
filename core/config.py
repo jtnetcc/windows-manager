@@ -43,6 +43,10 @@ class Settings:
     deep_mode: bool = False
     # "system" / "dark" / "light"，旧的皮肤名会自动映射
     theme: str = "system"
+    # 界面皮肤："classic"（默认，切角面板）/ "air"（留白圆角，试验中）。
+    # 单独一个字段而不是塞进 theme：它换的不只是配色，还有圆角和侧栏形态，
+    # 关掉就是回到 classic，两边互不影响。
+    skin: str = "classic"
     # 空字符串 = 品牌色（默认）；"system" = 跟随 Windows 强调色；#RRGGBB = 指定色
     accent: str = ""
     # 侧栏是否收起成图标条。收起后主内容区多出 160px，
@@ -62,11 +66,18 @@ class Settings:
     last_optimize_ts: float = 0.0
 
     def save(self) -> None:
+        """原子写：先写临时文件再整体替换。
+
+        直接 `write_text` 覆盖的问题是：写到一半断电/崩溃，留下的是**半截 JSON**，
+        下次启动 `load()` 解析失败 → 全部设置回到默认，统计数字也一起没。
+        同一目录下写临时文件再 `os.replace` 是原子的（Windows 上目标存在也没问题），
+        最坏情况是丢掉这一次改动，不会把旧配置毁掉。
+        """
         try:
-            CONFIG_PATH.write_text(
-                json.dumps(asdict(self), ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
+            payload = json.dumps(asdict(self), ensure_ascii=False, indent=2)
+            temp = CONFIG_PATH.with_name(CONFIG_PATH.name + ".tmp")
+            temp.write_text(payload, encoding="utf-8")
+            os.replace(temp, CONFIG_PATH)
         except OSError:
             applog.silenced("config.save")
 

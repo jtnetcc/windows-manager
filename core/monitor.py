@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import deque
+import time
 
 from PySide6.QtCore import QThread, Signal
 
@@ -94,13 +95,25 @@ class ProcessSampler(QThread):
                     self.sampled.emit(rows, leaks)
                 except Exception:
                     applog.failed("monitor.ProcessSampler.run")
-            self.msleep(self._interval)
+            # 分片睡：间隔可以从 8 秒随时调回 3 秒，不用等这一轮睡完
+            due = time.monotonic() + self._interval / 1000.0
+            while self._running and time.monotonic() < due:
+                self.msleep(150)
 
     def pause(self) -> None:
         self._paused = True
 
     def resume(self) -> None:
         self._paused = False
+
+    def set_interval(self, interval_ms: int) -> None:
+        """改采样间隔。
+
+        一次进程遍历（psutil 全量 + OpenProcess）实测 450~690 ms，3 秒一次
+        等于常驻吃掉 15% 的一个核。只有性能监控页真的在看进程列表，其余
+        页面把间隔放长到 8 秒，省下来的 CPU 是实打实的。
+        """
+        self._interval = max(1000, interval_ms)
 
     def stop(self) -> None:
         self._running = False

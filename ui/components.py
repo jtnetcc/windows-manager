@@ -156,12 +156,21 @@ def panel_path(rect: QRectF, chamfer: float = CHAMFER) -> QPainterPath:
 
 def paint_panel(painter: QPainter, rect: QRectF, fill: str,
                 chamfer: float = CHAMFER) -> None:
-    """填一块切角面板，并画出「顶边高光 + 其余发丝线」。
+    """填一块面板。
 
-    四边等重的描边会让所有块面看起来一样重，所以顶边单独加粗到 1.6px：
-    光从上面打下来，面板才有厚度。
+    两种画法，由 `T.CARD_RADIUS` 决定：
+    - 0（classic）：右上角切一刀 + 顶边高光。四边等重的描边会让所有块面
+      看起来一样重，所以顶边单独加粗到 1.6px，光从上面打下来才有厚度。
+    - >0（air）：四角圆角，只留一圈极淡的边，不做高光 —— 参考稿里的卡片
+      是「浮在淡底上的一块白」，不是一块有厚度的板。
     """
-    path = panel_path(rect, chamfer)
+    radius = getattr(T, "CARD_RADIUS", 0)
+    if radius:
+        path = QPainterPath()
+        path.addRoundedRect(rect, radius, radius)
+    else:
+        path = panel_path(rect, chamfer)
+
     painter.setPen(Qt.NoPen)
     painter.setBrush(QColor(fill))
     painter.drawPath(path)
@@ -169,6 +178,8 @@ def paint_panel(painter: QPainter, rect: QRectF, fill: str,
     painter.setBrush(Qt.NoBrush)
     painter.setPen(QPen(QColor(T.panel_edge()), 1))
     painter.drawPath(path)
+    if radius:
+        return
 
     painter.setPen(QPen(QColor(T.panel_edge_top()), 1.6))
     painter.drawLine(
@@ -241,7 +252,13 @@ def run_system(*args: str) -> bool:
     import subprocess
 
     try:
-        subprocess.Popen(list(args), shell=False)
+        # 目标是系统设置面板（GUI），但个别入口是控制台程序；
+        # 统一藏掉控制台，避免从界面点一下就闪一个黑窗口
+        subprocess.Popen(
+            list(args),
+            shell=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
         return True
     except OSError:
         return False
@@ -1199,25 +1216,29 @@ class NavButton(HoverMixin, QWidget):
         # 左右各留 6px，让选中底色和侧栏边缘有呼吸感
         rect = QRectF(self.rect()).adjusted(6, 1, -6, -1)
 
+        # 圆角半径与「左侧强调色竖条」都由皮肤控制：
+        # classic 是 5px 小圆角 + 竖条（Win11 NavigationView 的样子），
+        # air 是 12px 大圆角 + 不要竖条（参考稿是整块淡底的药丸）。
+        radius = getattr(T, "NAV_RADIUS", 5)
+        bar = getattr(T, "NAV_BAR", True)
+        selected = getattr(T, "NAV_SELECTED", "") or T.ACCENT_SOFT
+
         if self._active:
-            # 选中底色统一走强调色的淡版：深色下是暗青，浅色下是极淡青。
-            # 原来浅色用 PANEL_SUNKEN（灰），和侧栏底色几乎同色，选中等于没选。
-            active_bg = T.ACCENT_SOFT
             painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor(active_bg))
-            painter.drawRoundedRect(rect, 5, 5)
+            painter.setBrush(QColor(selected))
+            painter.drawRoundedRect(rect, radius, radius)
         elif self._pressed:
             painter.setPen(Qt.NoPen)
             # 轨道要够淡：太明显的话四个空槽会抢走注意力
             painter.setBrush(QColor(T.PANEL_ALT if T.is_dark() else T.PANEL_SUNKEN))
-            painter.drawRoundedRect(rect, 5, 5)
+            painter.drawRoundedRect(rect, radius, radius)
         elif self._hover:
             painter.setPen(Qt.NoPen)
             painter.setBrush(QColor(T.HOVER))
-            painter.drawRoundedRect(rect, 5, 5)
+            painter.drawRoundedRect(rect, radius, radius)
 
         # 选中指示条：3×16 圆角，贴在最左侧
-        if self._active:
+        if self._active and bar:
             painter.setPen(Qt.NoPen)
             painter.setBrush(QColor(T.ACCENT))
             painter.drawRoundedRect(

@@ -37,7 +37,9 @@ KIND_COLORS = {
     "file": T.ACCENT,
     "emoji": T.AMBER,
     "cache": T.GREEN,
+    "web": T.BLUE,
     "log": T.TEXT_DIM,
+    "logs": T.TEXT_DIM,
 }
 
 
@@ -419,14 +421,29 @@ class AppCleanPage(QWidget):
             self._render_detail()
             if not self._stats:
                 self.lbl_state.setText(
-                    "没有发现可清理的软件缓存。装了微信、QQ、企业版微信、钉钉"
-                    "或 Chrome / Edge / Firefox 之后再扫一次。"
+                    "没有发现可清理的软件缓存。这里按数据目录自适应识别："
+                    "只有明确命名成 Cache / Code Cache / GPUCache / Logs 的目录才算，"
+                    "本机数据目录和用户目录下的隐藏配置目录都会查。"
                 )
+                self.lbl_state.setToolTip("")
             else:
                 size = sum(stat.size for stat in self._stats)
-                self.lbl_state.setText(
-                    f"扫描完成：{len(self._stats)} 个软件 · {fmt_bytes(size)} 可清理"
-                )
+                text = f"扫描完成：{len(self._stats)} 个软件 · {fmt_bytes(size)} 可清理"
+                # 识别是「从目录看软件」，所以要说清扫了多少目录，否则用户
+                # 会以为它只认得列表里这几个。
+                info = appclean.discovery_info()
+                if info.probes:
+                    text += f"　识别 {info.probes} 个程序"
+                skipped = info.skipped
+                if skipped:
+                    self.lbl_state.setToolTip(
+                        "这些目录里没有可清的缓存，或总量太小不值得清：\n"
+                        + "\n".join(skipped[:30])
+                        + ("\n…" if len(skipped) > 30 else "")
+                    )
+                else:
+                    self.lbl_state.setToolTip("")
+                self.lbl_state.setText(text)
             return
 
         if task_id == "appclean_purge":

@@ -1,10 +1,13 @@
-"""软件管理页：两段 ——「已安装程序」和「卸载残留」。
+"""软件管理页：三段 ——「已安装程序」「卸载残留」「注册表残留」。
 
-两段放在一起是因为它们回答的是同一个问题的两面：这台机器上装了哪些软件、
-卸掉之后留下了什么。做成两个导航项会让人以为要分两次操作。
+三段放在一起是因为它们回答的是同一个问题的三面：这台机器上装了哪些软件、
+卸掉之后**磁盘上**留下了什么、卸掉之后**注册表里**留下了什么。做成三个导航项
+会让人以为要分三次操作，而且「卸载残留」四个字在两个页面里指的是两种不同的
+东西（无主数据目录 / 死掉的卸载项），摆在一起才说得清。
 
 卸载残留那段风险很高，规则写在 `core/leftover.py` 的文件头：只列不勾选、
-四道闸门、删除走回收站。这一页的职责是**把不确定性说清楚**，不是替用户下判断。
+四道闸门、删除走回收站。注册表那段则必须导出 .reg 备份才允许删。这一页的
+职责是**把不确定性说清楚**，不是替用户下判断。
 """
 
 from __future__ import annotations
@@ -47,16 +50,21 @@ from .components import (
 SEGMENTS = [
     ("installed", "已安装程序"),
     ("leftover", "卸载残留"),
+    # 原来的独立导航项「注册表项」。并进来是因为它常年空白：一台用了几年
+    # 的个人机扫出来 0 项、耗时 0.04 秒，却在侧栏占一整行，还是全软件唯一
+    # 会删注册表的地方 —— 越少人误入越好。
+    ("registry", "注册表残留"),
 ]
 
 SEGMENT_SUBS = {
     "installed": "已安装程序与卸载入口",
     "leftover": "卸载后留下的无主数据目录，只列出、不自动勾选",
+    "registry": "失效的卸载项、启动项、App Paths 与 COM 登记，删除前先导备份",
 }
 
 
 class SoftwarePage(QWidget):
-    """两段式容器。对外仍然是 `SoftwarePage`，主窗口那一侧不用改。"""
+    """三段式容器。对外仍然是 `SoftwarePage`，主窗口那一侧不用改。"""
 
     segment_changed = Signal(str, str)
 
@@ -79,20 +87,30 @@ class SoftwarePage(QWidget):
 
         self.installed = InstalledView(store, tasks)
         self.leftover = LeftoverView(store, tasks)
+        from .page_registry import RegistryPage
+
+        self.registry = RegistryPage(store, tasks)
 
         self.stack = QStackedWidget()
         self.stack.addWidget(self.installed)
         self.stack.addWidget(self.leftover)
+        self.stack.addWidget(self.registry)
         root.addWidget(self.stack, 1)
 
     def _on_segment(self, key: str) -> None:
         self._key = key
         self.stack.setCurrentWidget(
-            self.installed if key == "installed" else self.leftover
+            {
+                "installed": self.installed,
+                "leftover": self.leftover,
+                "registry": self.registry,
+            }.get(key, self.installed)
         )
         self.segment_changed.emit(key, SEGMENT_SUBS.get(key, ""))
         if key == "leftover":
             self.leftover.ensure_scan()
+        elif key == "registry":
+            self.registry.ensure_scan()
         else:
             self.installed.ensure_scan()
 
@@ -101,6 +119,14 @@ class SoftwarePage(QWidget):
             return
         self.seg.set_current(key, emit=False)
         self._on_segment(key)
+
+    def ensure_segment(self, key: str) -> QWidget | None:
+        """建出某一段但不切过去。三段都是构造时就建好的，这里只取。"""
+        return {
+            "installed": self.installed,
+            "leftover": self.leftover,
+            "registry": self.registry,
+        }.get(key)
 
     def current_segment(self) -> str:
         return self._key
@@ -111,12 +137,15 @@ class SoftwarePage(QWidget):
     def start_scan(self) -> None:
         if self._key == "installed":
             self.installed.refresh()
+        elif self._key == "registry":
+            self.registry.start_scan()
         else:
             self.leftover.ensure_scan(force=True)
 
     def shutdown(self) -> None:
         self.installed.shutdown()
         self.leftover.shutdown()
+        self.registry.shutdown()
 
 
 class InstalledView(QWidget):

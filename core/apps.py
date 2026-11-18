@@ -558,18 +558,42 @@ def list_installed(with_folders: bool = True, report=None) -> list[InstalledApp]
 
 
 def launch_uninstaller(app: InstalledApp) -> tuple[bool, str]:
-    """打开程序自带的卸载向导。"""
+    """打开程序自带的卸载向导。
+
+    **不用 `shell=True`。** 它等于先起一个 `cmd.exe /c`，而本进程是 GUI 子系统、
+    没有控制台，Windows 会给这个 cmd 新开一个控制台窗口 —— 用户看到的就是
+    一个黑色命令窗闪一下（有的机器上会一直挂着直到卸载向导结束）。
+    直接把命令行交给 CreateProcess 就没有 cmd 这一层。
+
+    代价：CreateProcess 不展开 `%ProgramFiles%` 这类变量（以前是 cmd 代劳），
+    所以这里先自己 `expandvars`。少数卸载串带 shell 语法（管道、`&&`、
+    重定向），那时才退回 cmd，并且把窗口藏起来。
+    """
     command = app.uninstall.strip()
     if not command:
         return False, "该程序没有可用的卸载命令"
+
+    command = os.path.expandvars(command)
     # 目录扫描得到的是一条裸路径，含空格时必须自己加引号，
-    # shell=True 会把「D:\Some App\uninstall.exe」拆成两段。
+    # 否则会被拆成「程序 + 参数」两段
     if not command.startswith('"') and os.path.isfile(command):
         command = f'"{command}"'
+
     try:
-        subprocess.Popen(command, shell=True)
+        subprocess.Popen(command, shell=False, close_fds=True)
         return True, ""
-    except Exception as exc:
+    except OSError:
+        applog.failed("apps.launch_uninstaller.direct")
+
+    # 退路：带 shell 语法的命令串走 cmd，但窗口不显示
+    try:
+        subprocess.Popen(
+            command,
+            shell=True,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        return True, ""
+    except Exception as exc:  # noqa: BLE001 — 界面要拿到原因
         return False, str(exc)
 
 

@@ -1,4 +1,9 @@
-"""注册表页：扫描冗余项，备份后清理。
+"""注册表残留视图：扫描冗余项，备份后清理。
+
+**它已经不是一个独立页面了**：侧栏里原来那行「注册表项」常年是「没有发现
+冗余项」，而注册表清理对现代 Windows 基本没有提速作用（系统按索引访问，
+不是全表扫描），却是全软件唯一会删注册表的地方。现在它作为「软件管理」
+的第三段存在 —— 和「卸载残留」同页，两个同名不同物的概念终于挨在了一起。
 
 设计上刻意保守：
 - 扫描只读，不改任何东西
@@ -12,6 +17,7 @@ import os
 import time
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
@@ -29,6 +35,25 @@ from core.store import RegistryState
 
 from . import theme_dark as T
 from .components import Card, label
+
+
+def make_task():
+    """扫一次注册表的任务体。
+
+    体检的 `run_full_check` 也要这一份：它以前靠「把页面建出来再点扫描」
+    拿到 registry_count，页面并进软件管理之后没那么方便了，直接派任务更省。
+    """
+
+    def run(report, should_stop):
+        issues = registry.scan(
+            should_stop=should_stop,
+            on_progress=lambda percent, text: report(percent, text),
+        )
+        if should_stop():
+            return None
+        return RegistryState(issues=issues, scanned_at=time.time())
+
+    return run
 
 
 class RegistryPage(QWidget):
@@ -51,7 +76,7 @@ class RegistryPage(QWidget):
 
         bar = QHBoxLayout()
         bar.setSpacing(8)
-        self.lbl_stat = label("点右侧「扫描注册表」，只读检查，通常 1–3 秒", 12, T.TEXT_DIM)
+        self.lbl_stat = label("点右侧「扫描注册表」，只读检查，不到 1 秒", 12, T.TEXT_DIM)
         bar.addWidget(self.lbl_stat, 0)
         bar.addStretch(1)
 
@@ -104,6 +129,29 @@ class RegistryPage(QWidget):
         self.table.setColumnWidth(3, 260)
         self.table.verticalHeader().setDefaultSectionSize(30)
         card.body().addWidget(self.table, 1)
+
+        # 空状态：这一段绝大多数时候就是「什么都没有」。留一张空表让人对着
+        # 一片白，会以为还在扫或者自己点错了；摆一句明确结论，比空的表头有用。
+        self.empty = QWidget()
+        empty_box = QVBoxLayout(self.empty)
+        empty_box.setContentsMargins(0, 0, 0, 0)
+        empty_box.setSpacing(6)
+        empty_box.addStretch(1)
+        title = label("没有发现失效的注册表条目", 13, T.TEXT, QFont.DemiBold)
+        title.setAlignment(Qt.AlignCenter)
+        note = label(
+            "失效的卸载项、启动命令、App Paths 与 COM 登记都会列在这里。\n"
+            "现在的结果是干净的 —— 装过又卸掉的软件最容易留下这类条目。",
+            11,
+            T.TEXT_DIM,
+        )
+        note.setAlignment(Qt.AlignCenter)
+        empty_box.addWidget(title)
+        empty_box.addWidget(note)
+        empty_box.addStretch(1)
+        self.empty.setVisible(False)
+        card.body().addWidget(self.empty, 1)
+
         root.addWidget(card, 1)
 
         self.lbl_hint = label(
@@ -115,24 +163,24 @@ class RegistryPage(QWidget):
 
     # ---------------------------------------------------------- 扫描
 
+    def ensure_scan(self) -> None:
+        """切到这一段时调：有结果就只重画，没有才扫。
+
+        扫一次 0.04 秒，但没必要每次切段都重扫 —— 换肤重建、来回切段都会
+        走到这里，重扫会让表在眼前闪一下、滚动位置也丢。
+        """
+        if self.store.registry.ready:
+            self._render()
+            return
+        if not self.tasks.is_busy("registry"):
+            self.start_scan()
+
     def start_scan(self) -> None:
         if self.tasks.is_busy("registry"):
             return
         self.lbl_stat.setText("正在扫描…")
         self.btn_scan.setEnabled(False)
-        self.tasks.submit("registry", "扫描注册表", self._make_task())
-
-    def _make_task(self):
-        def run(report, should_stop):
-            issues = registry.scan(
-                should_stop=should_stop,
-                on_progress=lambda percent, text: report(percent, text),
-            )
-            if should_stop():
-                return None
-            return RegistryState(issues=issues, scanned_at=time.time())
-
-        return run
+        self.tasks.submit("registry", "扫描注册表", make_task())
 
     def _on_task_progress(self, task_id: str, _percent: int, text: str) -> None:
         if task_id == "registry" and text:
@@ -171,8 +219,12 @@ class RegistryPage(QWidget):
 
         count = len(self._issues)
         admin = sum(1 for i in self._issues if i.needs_admin)
+        # 空表换成一句结论：表头和整片空白会让人以为「还没扫完」
+        self.table.setVisible(count > 0)
+        self.empty.setVisible(count == 0)
         if count == 0:
-            self.lbl_stat.setText("没有发现冗余项")
+            # 结论交给中间那块空态说，这里只留状态，免得同一句话出现两遍
+            self.lbl_stat.setText("扫描完成")
         else:
             extra = f"，其中 {admin} 项在系统级位置" if admin else ""
             self.lbl_stat.setText(f"发现 {count} 项冗余{extra}")

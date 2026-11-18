@@ -82,6 +82,7 @@ def _slider_row(
 class SettingsPage(QWidget):
     changed = Signal()
     theme_changed = Signal(str)
+    skin_changed = Signal(str)
     accent_changed = Signal(str)
 
     def __init__(self, settings: config.Settings, parent=None):
@@ -126,6 +127,24 @@ class SettingsPage(QWidget):
         )
         appearance.body().addWidget(
             _row("主题", "默认跟随系统，也可锁定浅色 / 深色", self.combo_mode)
+        )
+
+        # 界面风格单独一档：它换的是圆角、留白和面板形态，不只是配色。
+        # 留白版还是试验品，这里放一个下拉，随时能切回经典 ——
+        # 这就是「效果好就留、不好就回滚」的开关。
+        self.combo_skin = ComboBox()
+        self.combo_skin.addItem("经典（默认）", "classic")
+        self.combo_skin.addItem("留白（试验）", "air")
+        self.combo_skin.setFixedWidth(172)
+        for index in range(self.combo_skin.count()):
+            if self.combo_skin.itemData(index) == (settings.skin or "classic"):
+                self.combo_skin.setCurrentIndex(index)
+                break
+        self.combo_skin.currentIndexChanged.connect(
+            lambda _i: self.skin_changed.emit(self.combo_skin.currentData())
+        )
+        appearance.body().addWidget(
+            _row("界面风格", "留白版是大圆角 + 淡底，随时可切回经典", self.combo_skin)
         )
 
         accent_box = QWidget()

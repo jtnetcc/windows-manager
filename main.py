@@ -9,20 +9,67 @@
 
 from __future__ import annotations
 
-import ctypes
-import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QGuiApplication
-from PySide6.QtWidgets import QApplication, QMessageBox
 
-from core import applog, config, single_instance, version
-from ui import theme_dark
-from ui.main_window import MainWindow
+def _require_windows() -> None:
+    """非 Windows 平台在这里就停下，给一句人话。
+
+    为什么放在最前面：这个程序的每一项功能都长在 Windows 上 —— 注册表
+    （winreg）、内存统计（GlobalMemoryStatusEx）、磁盘健康（DeviceIoControl）、
+    启动项（schtasks / 注册表 Run 键）、回收站（SHQueryRecycleBin）、
+    单实例（命名互斥体）。在 macOS 上连 `import core.winmem` 都会失败，
+    直接抛 ImportError 用户只会看到「程序意外退出」。
+
+    打包出来的 macOS 版（.dmg）因此是一个**能安装、能启动、但会明确告知
+    不支持**的壳子。真要支持 macOS，得按模块重写这套平台层，
+    详见 docs/打包说明.md 的「macOS 支持现状」。
+    """
+    if sys.platform == "win32":
+        return
+
+    lines = [
+        "Windows系统管家 只能在 Windows 上运行。",
+        f"当前系统：{sys.platform}",
+        "它依赖注册表、WMI、DeviceIoControl 等 Windows 专有接口。",
+    ]
+    text = "\n".join(lines)
+    print(text, file=sys.stderr)
+    if sys.platform == "darwin":
+        # .app 没有控制台，只能借系统弹窗说清楚
+        import subprocess
+
+        script = (
+            'display alert "Windows系统管家 只支持 Windows" '
+            'message "当前系统无法运行本程序。\\n\\n'
+            '它依赖注册表、WMI、DeviceIoControl 等 Windows 专有接口。" '
+            'as critical buttons {"好"} default button 1'
+        )
+        try:
+            subprocess.run(
+                ["osascript", "-e", script], timeout=15, check=False
+            )
+        except Exception:
+            pass
+    raise SystemExit(2)
+
+
+_require_windows()
+
+import ctypes  # noqa: E402
+import os  # noqa: E402
+import time  # noqa: E402
+
+from PySide6.QtCore import Qt, QTimer  # noqa: E402
+from PySide6.QtGui import QGuiApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication, QMessageBox  # noqa: E402
+
+from core import applog, config, single_instance, version  # noqa: E402
+from ui import theme_dark  # noqa: E402
+from ui.main_window import MainWindow  # noqa: E402
 
 # 一个进程只弹一次崩溃提示，避免循环报错时刷屏
 _crash_reported = False
@@ -90,6 +137,9 @@ def _check_update_cli() -> int:
 
 
 def main() -> int:
+    # 启动分段计时：卡顿投诉里最缺的就是「慢在哪一段」
+    t_start = time.perf_counter()
+
     try:
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
             "MemoryKeeper.Desktop.1"
@@ -104,9 +154,23 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("Windows系统管家")
     app.setQuitOnLastWindowClosed(False)
+    applog.logger("app").info(
+        "启动：Qt 就绪 %.0f ms", (time.perf_counter() - t_start) * 1000
+    )
 
     settings = config.Settings.load()
     settings.autostart = config.is_autostart_enabled()
+
+    # 界面皮肤。命令行优先：`--skin air` 可以先看效果，不动已保存的设置，
+    # 关掉窗口再启动就回到 classic（等于一次完整的回滚）。
+    skin = settings.skin or "classic"
+    for index, arg in enumerate(sys.argv):
+        if arg == "--skin" and index + 1 < len(sys.argv):
+            skin = sys.argv[index + 1]
+        elif arg.startswith("--skin="):
+            skin = arg.split("=", 1)[1]
+    theme_dark.set_skin(skin)
+    applog.logger("app").info("界面皮肤：%s", skin)
 
     # 样式表必须在建窗口之前套上，否则首帧会闪一下默认配色
     theme_dark.set_accent(settings.accent or None)
@@ -114,6 +178,9 @@ def main() -> int:
     app.setStyleSheet(theme_dark.app_stylesheet())
 
     window = MainWindow(settings)
+    applog.logger("app").info(
+        "启动：窗口构建完成 %.0f ms", (time.perf_counter() - t_start) * 1000
+    )
 
     # 装上之后，任何未捕获异常都会落盘，并给用户一次「打开日志目录」的机会
     applog.install_excepthook(
@@ -125,6 +192,9 @@ def main() -> int:
         window.show()
     else:
         window.hide()
+    applog.logger("app").info(
+        "启动：窗口可见 %.0f ms", (time.perf_counter() - t_start) * 1000
+    )
 
     return app.exec()
 

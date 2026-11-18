@@ -29,6 +29,10 @@ class Reclaim:
         clean   → 有清理入口，跳到 page
         open    → 只能打开系统界面让用户自己处理
         none    → 只统计，不给入口（删了会出事的那种）
+
+    `cmd` 非空时按钮不再跳页面，而是**就地执行**这条命令（关休眠、删还原点）。
+    跳页面这件事的毛病是「点了没反应」——用户以为清理了，其实只是换了个地方；
+    能一条命令解决的，就在这一页解决完，然后立刻重测体积给他看。
     """
 
     key: str
@@ -40,6 +44,9 @@ class Reclaim:
     risk: str = ""
     admin: bool = False
     path: str = ""      # action=open 且指到目录时用
+    cmd: tuple[str, ...] = ()   # 就地执行的动作；空表示只能跳转 / 打开
+    verb: str = ""              # 按钮文案：「禁用」「清理」
+    warn: str = ""              # 确认框正文，写清代价
 
     @property
     def measurable(self) -> bool:
@@ -91,9 +98,12 @@ def _hibernation() -> Reclaim | None:
         "休眠文件",
         size,
         "和内存等量。关掉不能休眠，快速启动也失效（开机慢几秒）。",
-        action="clean",
-        page="slim",
+        action="disable",
         risk="关闭后无法休眠",
+        # 这就是「清理」这一步的正解：hiberfil.sys 不能直接删，只能让系统自己关掉
+        cmd=("powercfg.exe", "/hibernate", "off"),
+        verb="禁用",
+        warn="关闭休眠后，hiberfil.sys 会被系统删除，快速启动也随之失效（开机慢几秒）。",
     )
 
 
@@ -248,9 +258,11 @@ def _recycle_bin(should_stop=lambda: False) -> Reclaim | None:
         items = recycle.list_items()
     except Exception:
         items = []
-    size = sum(getattr(item, "size", 0) for item in items)
-    if not size:
-        size = _dir_size(os.path.join(_drive(), "$Recycle.Bin"), should_stop)
+    # 两个口径取大：列表能说清「有几个文件」，目录体积才是盘上真实占用。
+    # 只信列表的话，同一屏里「目录占用 4.71 GB / 可回收 4.55 GB」会打自己的脸。
+    listed = sum(getattr(item, "size", 0) for item in items)
+    measured = _dir_size(os.path.join(_drive(), "$Recycle.Bin"), should_stop)
+    size = max(listed, measured)
     if not size:
         return None
     if items:
@@ -284,6 +296,7 @@ def _restore_points() -> Reclaim | None:
     size = int(value * {"TB": 1024 ** 4, "GB": _GB, "MB": 1024 ** 2}[unit])
     if size < 64 * 1024 ** 2:
         return None
+    drive = os.environ.get("SystemDrive", "C:")
     return Reclaim(
         "restore_points",
         "系统还原点",
@@ -292,6 +305,11 @@ def _restore_points() -> Reclaim | None:
         action="open",
         page="restore",
         admin=True,
+        # 全部删掉是最省事的一步；只想缩配额的话仍然走 page=restore 的系统界面
+        cmd=("vssadmin.exe", "delete", "shadows", "/all", f"/for={drive}", "/quiet"),
+        verb="清理",
+        warn="将删除本机全部系统还原点，之后不能用「系统还原」回到更早的状态。"
+        "想保留最近一个，请改用「打开系统保护」调整配额。",
     )
 
 
@@ -392,5 +410,69 @@ def split_note(items: list[Reclaim]) -> str:
 
     if not items:
         return ""
-    auto = sum(item.size for item in items if item.action == "clean")
+    auto = sum(item.size for item in items if item.action == "clean" or item.cmd)
     return f"共 {fmt_size(total(items))}，其中 {fmt_size(auto)} 可一键回收"
+
+
+_UNITS = {
+    "hibernation": _hibernation,
+    "pagefile": _pagefile,
+    "dump": _dump,
+    "search_index": _search_index,
+    "installer_cache": _installer_cache,
+    "store_apps": _store_apps,
+    "virtual_disk": _virtual_disks,
+    "recycle": _recycle_bin,
+    "windows_old": _windows_old,
+    "restore_points": _restore_points,
+    "winsxs": _component_store,
+}
+
+
+def quick() -> list[Reclaim]:
+    """只算「秒级 + 最该先看」的那几项：休眠、页面文件、转储、索引库、回收站。
+
+    全盘扫描要几十秒，可这几项都是几次 stat 加一次浅遍历 —— 先摆上桌，
+    用户一进页面就有「能省多少」可看，而不是对着一块空白等两分钟。
+    回收站单独拎进来：它是最多人真正会去点的那一项。
+    """
+    out: list[Reclaim] = []
+    for fn in FAST_ITEMS + (_recycle_bin,):
+        try:
+            item = fn(should_stop=lambda: False) if fn is _recycle_bin else fn()
+        except Exception as exc:
+            print(f"[space] quick {getattr(fn, '__name__', fn)} 失败: {exc}")
+            continue
+        if item is not None and item.measurable:
+            out.append(item)
+    out.sort(key=lambda r: r.size, reverse=True)
+    return out
+
+
+def execute(cmd: tuple[str, ...], timeout: int = 180) -> tuple[int, str]:
+    """执行一条就地动作（禁用 / 清理），返回 (退出码, 输出)。
+
+    界面只认退出码：0 才重新统计，非 0 把输出原样显示给用户 ——
+    静默失败比不做更糟，用户会以为空间已经腾出来了。
+    """
+    if not cmd:
+        return 1, ""
+    return run_cmd(*cmd, timeout=timeout)
+
+
+def collect_one(key: str, should_stop=lambda: False) -> Reclaim | None:
+    """按 key 重测一项。
+
+    用完「禁用 / 清理」之后必须复测：不重测的话行还在、数字还是老的，
+    用户根本不知道刚才那一下有没有生效。返回 None 表示这项已经归零。
+    """
+    fn = _UNITS.get(key)
+    if fn is None:
+        return None
+    try:
+        if fn in DIR_ITEMS:
+            return fn(should_stop)
+        return fn()
+    except Exception as exc:
+        print(f"[space] 复测 {key} 失败: {exc}")
+        return None

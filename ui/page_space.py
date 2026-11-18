@@ -67,6 +67,17 @@ def _cat_color(key: str) -> str:
     }.get(key, T.TEXT_DIM)
 
 
+def _unscan_color() -> str:
+    """「还没扫到」那一段：强调色的淡版。
+
+    原来用 BORDER 的灰，和右边「可用」的浅灰几乎同色，扫到一半的条看起来
+    像「已用一半、空一半」。淡蓝即表明「在扫」，也和可用区分得开。
+    """
+    color = QColor(T.ACCENT)
+    color.setAlpha(90)
+    return color.name(QColor.HexArgb)
+
+
 def _drive_text() -> str:
     return os.environ.get("SystemDrive", "C:") + "\\"
 
@@ -207,13 +218,21 @@ class DirRow(HoverMixin, QWidget):
         self.lbl_size.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         row.addWidget(self.lbl_size, 0)
 
-    def set_node(self, node: dirstat.Node, ratio: float) -> None:
+        # 占整盘的比例：条形是「占父级」，两者一起看才不会误读 ——
+        # 只看条形的话，点进任何一个目录都有一条撑满的，像是又发现了一块大户
+        self.lbl_pct = label("", 11, T.TEXT_DIM)
+        self.lbl_pct.setFixedWidth(38)
+        self.lbl_pct.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        row.addWidget(self.lbl_pct, 0)
+
+    def set_node(self, node: dirstat.Node, ratio: float, pct: float = 0.0) -> None:
         self.node = node
         mark = "▸ " if node.is_dir and (node.children or node.folded) else "  "
         self.lbl_name.setText(f"{mark}{node.name}")
         self.lbl_size.setText(fmt_size(node.size))
+        self.lbl_pct.setText(f"{pct:.0f}%" if pct >= 0.5 else "<1%")
         self.bar.set_value(ratio, _cat_color(dirstat.category_of(node)))
-        tip = [node.path, dirstat.describe(node)]
+        tip = [node.path, dirstat.describe(node), f"占整盘 {pct:.1f}%"]
         if node.folded:
             tip.append(f"另有 {node.folded} 个子目录 {fmt_size(node.folded_size)}")
         self.setToolTip("\n".join(tip))
@@ -258,11 +277,15 @@ class ReclaimRow(QWidget):
         row.setContentsMargins(6, 0, 2, 0)
         row.setSpacing(6)
 
+        # 名称在前、风险标签紧跟其后、中间留空、体积与按钮靠右。
+        # 原来标签排在名称和体积之间，位置随名称长度漂移，四行看下来参差不齐。
         self.lbl_name = label("", 12, T.TEXT)
-        row.addWidget(self.lbl_name, 1)
+        row.addWidget(self.lbl_name, 0)
 
         self.lbl_risk = label("", 10, T.RED)
         row.addWidget(self.lbl_risk, 0)
+
+        row.addStretch(1)
 
         self.lbl_size = label("", 12, T.TEXT)
         self.lbl_size.setFixedWidth(62)
@@ -303,6 +326,10 @@ class SpaceAnalysisView(QWidget):
         self._live: dirstat.Node | None = None      # 扫描中的临时树
         self._stack: list[dirstat.Node] = []
         self._busy = False
+        self._used = 0        # 整盘已用。不等扫描：进页面先量一次
+        self._total = 0       # 整盘容量，堆叠条与「占盘」列共用的分母
+        self._quick: list[spacereport.Reclaim] = []   # 扫描中先摆出来的可回收项
+        self._refresh_key = ""                        # 正在复测的那一项
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -346,6 +373,12 @@ class SpaceAnalysisView(QWidget):
         title.addWidget(self.lbl_bar_note, 0)
         self.card_bar.body().addLayout(title)
 
+        # 结论先给一句，数据在后：用户要的是「满没满、谁最大、能腾多少」，
+        # 不是先看一条彩色条自己推
+        self.lbl_verdict = label("", 11, T.TEXT_SUB)
+        self.lbl_verdict.setWordWrap(True)
+        self.card_bar.add(self.lbl_verdict)
+
         self.bar = StackBar()
         self.card_bar.add(self.bar)
 
@@ -371,13 +404,31 @@ class SpaceAnalysisView(QWidget):
             holder.setLayout(cell)
             self.legend.addWidget(holder, 0)
             self._dots[key] = value
+
+        # 扫描中才出现的「未扫」图例：不给它一个块，用户会以为「其他」那一格
+        # 是数据没出来
+        self._unscan_holder = QWidget()
+        unscan_cell = QHBoxLayout(self._unscan_holder)
+        unscan_cell.setContentsMargins(0, 0, 0, 0)
+        unscan_cell.setSpacing(5)
+        unscan_dot = QWidget()
+        unscan_dot.setFixedSize(8, 8)
+        unscan_dot.setStyleSheet(
+            f"background: {_unscan_color()}; border-radius: 2px;"
+        )
+        unscan_cell.addWidget(unscan_dot, 0)
+        unscan_cell.addWidget(label("未扫", 11, T.TEXT_DIM), 0)
+        self.lbl_unscan = label("—", 11, T.TEXT)
+        unscan_cell.addWidget(self.lbl_unscan, 0)
+        self.legend.addWidget(self._unscan_holder, 0)
+        self._unscan_holder.hide()
         cell = QHBoxLayout()
         cell.setContentsMargins(0, 0, 0, 0)
         cell.setSpacing(5)
         free_dot = QWidget()
         free_dot.setFixedSize(8, 8)
         free_dot.setStyleSheet(
-            f"background: {T.PANEL_SUNKEN}; border: 1px solid {T.BORDER}; border-radius: 2px;"
+            f"background: {T.BORDER_SOFT}; border: 1px solid {T.BORDER}; border-radius: 2px;"
         )
         cell.addWidget(free_dot, 0)
         cell.addWidget(label("可用", 11, T.TEXT_DIM), 0)
@@ -400,15 +451,17 @@ class SpaceAnalysisView(QWidget):
         head_dirs.setContentsMargins(0, 0, 0, 0)
         head_dirs.setSpacing(6)
         head_dirs.addWidget(label("目录占用", 12, T.TEXT, QFont.DemiBold), 0)
+        # 当前路径紧贴标题：原来它排在 stretch 后面，正好落在「大小」列上方，
+        # 看着像这一列的表头
+        self.lbl_crumb = label(_drive_text(), 10, T.TEXT_DIM)
+        head_dirs.addWidget(self.lbl_crumb, 0)
+        head_dirs.addStretch(1)
         self.btn_up = QPushButton("↑ 上级")
         self.btn_up.setObjectName("Ghost")
         self.btn_up.setFixedHeight(20)
         self.btn_up.setFixedWidth(52)
         self.btn_up.setEnabled(False)
         self.btn_up.clicked.connect(self._up)
-        head_dirs.addStretch(1)
-        self.lbl_crumb = label(_drive_text(), 10, T.TEXT_DIM)
-        head_dirs.addWidget(self.lbl_crumb, 0)
         head_dirs.addWidget(self.btn_up, 0)
         self.card_dirs.body().addLayout(head_dirs)
 
@@ -423,6 +476,10 @@ class SpaceAnalysisView(QWidget):
         size_head.setFixedWidth(66)
         size_head.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         header.addWidget(size_head, 0)
+        pct_head = label("占盘", 10, T.TEXT_DIM)
+        pct_head.setFixedWidth(38)
+        pct_head.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        header.addWidget(pct_head, 0)
         self.card_dirs.body().addLayout(header)
 
         self.dir_rows: list[DirRow] = []
@@ -455,8 +512,8 @@ class SpaceAnalysisView(QWidget):
             row = label("", 11, T.TEXT_SUB)
             hist.addWidget(row)
             self.hist_rows.append(row)
-        self.card_dirs.body().addLayout(hist)
         self.card_dirs.body().addStretch(1)
+        self.card_dirs.body().addLayout(hist)
         columns.addWidget(self.card_dirs, 3)
 
         self.card_reclaim = Card(padding=12, spacing=6)
@@ -477,6 +534,11 @@ class SpaceAnalysisView(QWidget):
             row.clicked.connect(self._run_action)
             self.card_reclaim.add(row)
             self.rec_rows.append(row)
+
+        # 告诉用户「按下去会发生什么」：这些按钮不是跳转，是就地执行 + 复测
+        self.lbl_loop_note = label("", 10, T.TEXT_DIM)
+        self.lbl_loop_note.setWordWrap(True)
+        self.card_reclaim.add(self.lbl_loop_note)
         self.card_reclaim.body().addStretch(1)
 
         # 卡片底部这块留白原来空着，正好放「深入分析」的说明：
@@ -532,11 +594,17 @@ class SpaceAnalysisView(QWidget):
         self._busy = True
         self._live = dirstat.Node(path=_drive_text())
         self._stack.clear()
+        self._quick = []
+        # 容量 / 已用立刻拿：堆叠条从第一帧就有分母，右侧也先把秒级项摆出来
+        self._used, self._total = space.usage()
         self.progress.show()
         self.progress.set_ratio(0.02)
         self.btn_scan.setText("停止")
         self.btn_deep.setEnabled(False)
         self.lbl_info.setText("正在统计目录…")
+        self._fill_bar()
+        self._fill_verdict()
+        self._fill_reclaim()
 
         self.tasks.submit(
             "space",
@@ -548,12 +616,18 @@ class SpaceAnalysisView(QWidget):
         def run(report, should_stop):
             def on_dir(node, done, total):
                 # 从任务线程发回主线程，界面收到一行就先画一行
-                self.tasks.partial.emit("space", (node, done, total))
+                self.tasks.partial.emit(
+                    "space", {"kind": "dir", "node": node, "done": done, "total": total}
+                )
+
+            def on_items(items):
+                self.tasks.partial.emit("space", {"kind": "items", "items": items})
 
             return space.run(
                 should_stop=should_stop,
                 report=report,
                 on_dir=on_dir,
+                on_items=on_items,
                 slow=deep,
             )
 
@@ -574,17 +648,31 @@ class SpaceAnalysisView(QWidget):
             self.lbl_info.setText(text)
 
     def _on_partial(self, task_id: str, payload) -> None:
-        if task_id != "space" or self._live is None:
+        if task_id != "space":
             return
-        node, done, total = payload
+        kind = payload.get("kind") if isinstance(payload, dict) else ""
+        if kind == "items":
+            # 扫描还没结束，秒级那几项先上桌
+            self._quick = list(payload.get("items") or [])
+            self._fill_reclaim()
+            self._fill_verdict()
+            return
+        if kind != "dir" or self._live is None:
+            return
+        node, done, total = payload["node"], payload["done"], payload["total"]
         self._live.children.append(node)
         self._live.children.sort(key=lambda n: n.size, reverse=True)
         self._live.size += node.size
         self._live.files += node.files
         self._fill_dirs()
+        self._fill_bar()
+        self._fill_verdict()
         self.lbl_info.setText(f"已扫 {done}/{total} 个顶层目录 · {node.name}")
 
     def _on_finished(self, task_id: str, result=None) -> None:
+        if task_id == "space_refresh":
+            self._apply_refresh(result)
+            return
         if task_id == "space_sub":
             self._apply_sub(result)
             return
@@ -600,6 +688,10 @@ class SpaceAnalysisView(QWidget):
         self._adopt(result)
 
     def _on_failed(self, task_id: str, _label: str, error: str) -> None:
+        if task_id == "space_refresh":
+            self._refresh_key = ""
+            self.lbl_info.setText(f"重测失败：{error}")
+            return
         if task_id not in ("space", "space_sub"):
             return
         self._busy = False
@@ -630,6 +722,7 @@ class SpaceAnalysisView(QWidget):
         self._fill_reclaim()
         self._fill_history()
         self._fill_hint()
+        self._fill_verdict()
 
     def _current(self) -> dirstat.Node | None:
         if self._stack:
@@ -642,26 +735,47 @@ class SpaceAnalysisView(QWidget):
         node = self._result.root if self._result else self._live
         if node is None:
             return
-        used = self._result.used if self._result else node.size
-        total = self._result.total if self._result else 0
-        parts = dirstat.summarize(node, used)
+        used = self._result.used if self._result else self._used
+        total = self._result.total if self._result else self._total
+        keys = ("system", "app", "user", "system_file", "other")
+
+        scanning = self._result is None and self._busy
+        if scanning:
+            # 扫描中不能用 summarize()：它会把「还没扫到的部分」塞进「其他」，
+            # 于是「其他」越扫越小，最后突然缩水 —— 这里单独画一段中灰。
+            parts = {key: 0 for key in keys}
+            for child in node.children:
+                parts[dirstat.category_of(child)] += child.size
+        else:
+            parts = dirstat.summarize(node, used)
+
         chunks: list[tuple[int, str]] = []
-        for key in ("system", "app", "user", "system_file", "other"):
+        for key in keys:
             value = parts.get(key, 0)
             if value > 0:
                 chunks.append((value, _cat_color(key)))
+        if scanning and used > node.size:
+            chunks.append((used - node.size, _unscan_color()))
+            self.lbl_unscan.setText(fmt_size(used - node.size))
+            self._unscan_holder.show()
+        else:
+            self._unscan_holder.hide()
         if total > used:
-            chunks.append((total - used, T.PANEL_SUNKEN))
+            chunks.append((total - used, T.BORDER_SOFT))
         self.bar.set_parts(chunks)
 
         for key, item in self._dots.items():
             value = parts.get(key, 0)
             item.setText(fmt_size(value) if value else "—")
         self.lbl_free.setText(fmt_size(max(0, total - used)) if total else "—")
-        if self._result:
-            percent = self._result.percent
+
+        if scanning:
             self.lbl_bar_note.setText(
-                f"已用 {percent:.0f}% · 剩余 {fmt_size(self._result.free)}"
+                f"扫描中 · 已扫 {fmt_size(node.size)} / {fmt_size(used)}"
+            )
+        elif self._result:
+            self.lbl_bar_note.setText(
+                f"已用 {self._result.percent:.0f}% · 剩余 {fmt_size(self._result.free)}"
             )
 
     def _fill_dirs(self) -> None:
@@ -679,12 +793,17 @@ class SpaceAnalysisView(QWidget):
         self.lbl_crumb.setToolTip(crumb)
         self.btn_up.setEnabled(bool(self._stack))
 
-        total = node.size or 1
+        parent_total = node.size or 1
+        disk = (self._result.total if self._result else self._total) or 0
         children = [child for child in node.children if child.size > 0][:MAX_DIR_ROWS]
         for index, row in enumerate(self.dir_rows):
             if index < len(children):
                 child = children[index]
-                row.set_node(child, child.size / total)
+                row.set_node(
+                    child,
+                    child.size / parent_total,
+                    (child.size / disk * 100) if disk else 0.0,
+                )
                 row.show()
             else:
                 row.hide()
@@ -702,21 +821,33 @@ class SpaceAnalysisView(QWidget):
         self.lbl_more.setText(" · ".join(tail))
 
     def _fill_reclaim(self) -> None:
-        items = self._result.items if self._result else []
+        scanning = self._result is None
+        items = self._quick if scanning else list(self._result.items)
         items = sorted(items, key=lambda i: i.size, reverse=True)[:MAX_RECLAIM_ROWS]
         for index, row in enumerate(self.rec_rows):
             if index < len(items):
                 item = items[index]
-                row.set_item(item, ACTION_TEXT.get(item.action, "打开"))
+                text = item.verb or ACTION_TEXT.get(item.action, "打开")
+                row.set_item(item, text)
                 row.show()
             else:
+                # 空行要清掉 item：只 hide 的话，隐藏行里还留着上一条的引用，
+                # 后续复测 / 统计会把它当成「还在的一项」
+                row.item = None
                 row.hide()
-        if self._result and self._result.items:
-            self.lbl_reclaim_total.setText(fmt_size(spacereport.total(self._result.items)))
-            self.lbl_reclaim_note.setText(spacereport.split_note(self._result.items))
-            deep = any(
-                item.key in ("winsxs", "restore_points") for item in self._result.items
+
+        if items:
+            self.lbl_reclaim_total.setText(fmt_size(spacereport.total(items)))
+            note = spacereport.split_note(items)
+            if scanning:
+                note = "扫描中 · 已列出能立刻算出来的几项"
+            self.lbl_reclaim_note.setText(note)
+            self.lbl_loop_note.setText(
+                "「禁用 / 清理」点下去就执行，完成后自动重测体积。"
+                if any(item.cmd for item in items)
+                else ""
             )
+            deep = any(item.key in ("winsxs", "restore_points") for item in items)
             self.lbl_deep_note.setText(
                 "已包含系统还原点与组件存储。"
                 if deep
@@ -724,8 +855,45 @@ class SpaceAnalysisView(QWidget):
             )
         else:
             self.lbl_reclaim_total.setText("")
-            self.lbl_reclaim_note.setText("扫描后显示系统盘上的大块占用")
+            self.lbl_loop_note.setText("")
+            self.lbl_reclaim_note.setText(
+                "正在统计可回收项…" if scanning else "没有发现可以安全回收的大块占用"
+            )
             self.lbl_deep_note.setText("")
+
+    def _fill_verdict(self) -> None:
+        """一句话结论：满没满、谁最大、能立刻腾多少。"""
+        node = self._result.root if self._result else self._live
+        if node is None:
+            self.lbl_verdict.setText("")
+            return
+        used = self._result.used if self._result else self._used
+        total = self._result.total if self._result else self._total
+        if not total:
+            self.lbl_verdict.setText("")
+            return
+
+        percent = used / total * 100
+        parts = [f"C 盘已用 {percent:.0f}%（剩 {fmt_size(max(0, total - used))}）"]
+
+        top = max(node.children, key=lambda n: n.size, default=None)
+        if top is not None and top.size > 0:
+            parts.append(f"最大是 {top.name} {fmt_size(top.size)}")
+
+        items = (self._quick if self._result is None else self._result.items) or []
+        ready = [item for item in items if item.cmd or item.action == "clean"]
+        if ready:
+            best = max(ready, key=lambda i: i.size)
+            name = best.name if best.size else ""
+            if len(ready) > 1:
+                parts.append(
+                    f"可立刻回收 {fmt_size(sum(i.size for i in ready))}"
+                    f"（最大一项：{name} {fmt_size(best.size)}）"
+                )
+            else:
+                parts.append(f"可立刻回收 {fmt_size(best.size)}（{name}）")
+
+        self.lbl_verdict.setText("；".join(parts) + "。")
 
     def _fill_history(self) -> None:
         grows = spacehistory.growth(30, limit=3)
@@ -825,8 +993,71 @@ class SpaceAnalysisView(QWidget):
         menu.addAction("复制路径", lambda: copy_text(node.path))
         menu.exec(position)
 
+    def _apply_refresh(self, item) -> None:
+        """禁用 / 清理之后，把这一项换成重测结果：还在就更新数字，归零就撤行。"""
+        key = self._refresh_key
+        self._refresh_key = ""
+        if not key:
+            return
+        fresh = item if (item is not None and item.measurable) else None
+
+        def replace(items: list[spacereport.Reclaim]) -> list[spacereport.Reclaim]:
+            return [fresh if old.key == key else old for old in items] if fresh else [
+                old for old in items if old.key != key
+            ]
+
+        self._quick = replace(self._quick)
+        if self._result is not None:
+            self._result.items = replace(self._result.items)
+
+        # 盘上的数字变了，容量口径也要跟着更新，否则「已用 %」还停在旧值
+        self._used, self._total = space.usage()
+        self._fill_reclaim()
+        self._fill_bar()
+        self._fill_dirs()
+        self._fill_verdict()
+        self.lbl_info.setText("已重新统计，体积变化见左侧")
+
+    def _run_cmd(self, item: spacereport.Reclaim) -> None:
+        """就地执行「禁用 / 清理」：先讲清代价，跑完立刻复测。"""
+        verb = item.verb or "执行"
+        box = QMessageBox(self)
+        box.setWindowTitle(f"{verb}{item.name}")
+        box.setIcon(QMessageBox.Warning)
+        box.setTextFormat(Qt.PlainText)
+        box.setText(f"将{verb}「{item.name}」，预计释放 {fmt_size(item.size)}。")
+        note = item.warn or item.note
+        box.setInformativeText(f"{note}\n\n这一步不能撤销，确定继续吗？")
+        confirm = box.addButton(f"仍要{verb}", QMessageBox.AcceptRole)
+        box.addButton("取消", QMessageBox.RejectRole)
+        box.exec()
+        if box.clickedButton() is not confirm:
+            return
+
+        code, output = spacereport.execute(item.cmd)
+        if code != 0:
+            detail = (output or "").strip()[-400:] or f"退出码 {code}"
+            QMessageBox.warning(
+                self,
+                f"{verb}失败",
+                f"{item.name}没有被释放。系统返回：\n\n{detail}",
+            )
+            return
+
+        self.lbl_info.setText(f"已{verb} {item.name}，正在重测体积…")
+        self._refresh_key = item.key
+        name = item.name
+        self.tasks.submit(
+            "space_refresh",
+            f"重测 {name}",
+            lambda report, should_stop: spacereport.collect_one(item.key, should_stop),
+        )
+
     def _run_action(self, item: spacereport.Reclaim) -> None:
-        """可回收项的按钮。能跳到本程序页面的就跳，不能的交给 Windows。"""
+        """可回收项的按钮。能就地做的就地做，做不了的跳页面或交给 Windows。"""
+        if item.cmd:
+            self._run_cmd(item)
+            return
         page = item.page
         if page in ("slim", "recycle"):
             self._nav(page)
@@ -863,6 +1094,7 @@ class SpaceAnalysisView(QWidget):
 ACTION_TEXT = {
     "clean": "去清理",
     "open": "打开",
+    "disable": "禁用",
     "none": "仅统计",
 }
 
@@ -934,5 +1166,5 @@ class SpacePage(QWidget):
             self.files.start_scan()
 
     def shutdown(self) -> None:
-        self.analysis.tasks.cancel_many("space", "space_sub")
+        self.analysis.tasks.cancel_many("space", "space_sub", "space_refresh")
         self.files.shutdown()

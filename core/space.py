@@ -48,20 +48,42 @@ def _usage(root: str) -> tuple[int, int]:
         return 0, 0
 
 
+def usage() -> tuple[int, int]:
+    """当前系统盘的 (已用, 总量)。
+
+    单独开一个口子给界面：容量和已用在扫描一开始就该知道，否则堆叠条要等到
+    扫完才有分母，中间那几十秒只能画一条空轨。
+    """
+    return _usage(os.environ.get("SystemDrive", "C:") + "\\")
+
+
 def run(
     should_stop=lambda: False,
     report=lambda percent, text: None,
     on_dir=None,
+    on_items=None,
     slow: bool = False,
 ) -> SpaceResult | None:
     """扫一次。返回 None 表示被取消。
 
     `on_dir(node, done, total)` 每扫完一个顶层目录回调一次 —— 界面靠它做
     「打开就有东西看」：先是 `C:\\Windows` 挂着「统计中」，扫完后定格成真实体积。
+
+    `on_items(list)` 在开扫前先回一次可回收项（只含秒级能算的几项），让右侧
+    「可回收」不用陪着目录一起等。
     """
     started = time.perf_counter()
     root_path = os.environ.get("SystemDrive", "C:") + "\\"
     layout = dirstat.Layout()
+
+    # 容量先拿：堆叠条的分母、结论句的百分比都靠它
+    used, total = _usage(root_path)
+
+    if on_items is not None:
+        try:
+            on_items(spacereport.quick())
+        except Exception as exc:  # 先摆的那几项失败了也不该拦住扫描
+            print(f"[space] 预取可回收项失败: {exc}")
 
     report(3, "正在统计目录…")
     root = dirstat.scan(
@@ -74,7 +96,6 @@ def run(
     if should_stop():
         return None
 
-    used, total = _usage(root_path)
     report(88, "正在统计可回收项…")
     items = spacereport.collect(
         include_dirs=True, include_slow=slow, should_stop=should_stop

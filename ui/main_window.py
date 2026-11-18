@@ -59,8 +59,10 @@ from core.store import Store
 from core.task import TaskCenter
 
 from . import appicon, icons, theme_dark as T, tooltip
+from .bg import BackgroundCall
 from .components import Hairline, NavButton, Vitals, label, mono_label
 from .feed import feed
+from .stallwatch import StallWatch
 from core import applog
 
 # 十四个页面模块不再在这里导入：启动只建首屏那一页，模块也跟着按需加载
@@ -70,9 +72,8 @@ from core import applog
 # 侧栏导航按「看完 → 腾空间 → 改行为」三段排。
 #
 # 名称一律四个字：2/3/4 字混排时右边缘参差，看着像没对齐。压到两字做不到
-# （「大文件」「回收站」「注册表」压成「文件」「回收」「注册」会失真），
-# 所以统一往四字扩写，不改概念。key 是页面标识，改显示名不影响跳转，
-# 页面内部文案也不用跟着改。
+# （「空间分析」「系统瘦身」压成「空间」「瘦身」会失真），所以统一往四字扩写，
+# 不改概念。key 是页面标识，改显示名不影响跳转，页面内部文案也不用跟着改。
 NAV_GROUPS = [
     (
         "概览",
@@ -98,8 +99,10 @@ NAV_GROUPS = [
             # store 字段，扫描还会互相覆盖。已并入「开机启动」的分段里。
             ("startup", "开机启动", "power"),
             ("slim", "系统瘦身", "slim"),
+            # 注册表冗余原来是独立一项，并进了软件管理的第三段：它常年空白
+            # （个人机实测 0 项、0.04 秒），却占一行侧栏、还是全软件唯一会
+            # 删注册表的地方。旧 key "registry" 仍可跳转，见 SOFTWARE_TARGETS。
             ("software", "软件管理", "app"),
-            ("registry", "注册表项", "tree"),
         ],
     ),
 ]
@@ -126,7 +129,8 @@ LAZY_STARTERS = {
     # 走单发定时器换肤后约有 1/3 概率不落地，页面停在全横杠状态。
     "slim": "start_scan",
     "health": "start_probe",
-    "registry": "start_scan",
+    # 注册表不再是独立页面：切到软件管理的「注册表残留」分段时由分段自己
+    # 触发 ensure_scan，这里不用再挂一条。
     # 有缓存就先渲染、没有才扫：换肤重建时任务可能还在跑，
     # 直接 start_scan 会被 is_busy 挡回来，页面就停在空表上
     "startup": "ensure_scan",
@@ -169,8 +173,7 @@ PAGE_SUBS = {
     "slim": "关掉不需要的系统功能，收回能安全释放的空间",
     "bigfile": "系统盘空间去哪了，以及哪些能回收",
     "startup": "开机自启的注册表项、快捷方式与计划任务",
-    "registry": "卸载残留、启动项、App Paths 与 COM 组件的失效条目",
-    "software": "已安装程序与卸载残留",
+    "software": "已安装程序、卸载残留与注册表残留",
     "settings": "外观、监控、告警与启动",
     "about": "免费开源 · 版本与运行环境",
 }
@@ -196,6 +199,11 @@ NO_OPTIMIZE_PAGES = RECLAIM_HIDDEN_PAGES | {"cleanup", "bigfile", "startup"}
 # 「清理中心」收编的四个分段，键名沿用旧的页面 key：
 # 跨页跳转还按 clean / appclean / dup / recycle 指路，switch_page 负责翻译。
 CLEANUP_TARGETS = {"clean", "appclean", "dup", "recycle"}
+
+# 「注册表项」原来是独立页面，现在是软件管理的第三段。体检的 FACTOR_PAGE、
+# 总览页的待处理卡片、老测试脚本都还在用 "registry" 指路，统一翻译过去，
+# 免得每加一个调用方都要记得改。
+SOFTWARE_TARGETS = {"registry"}
 
 AUTO_COOLDOWN = 150.0
 
@@ -381,6 +389,11 @@ class MainWindow(QMainWindow):
 
         self._nav: dict[str, NavButton] = {}
         self._pages: dict[str, QWidget] = {}
+        # 后台调用：目前只有「检查更新」用它。以前那一步在 UI 线程同步跑，
+        # 冷启动时 DNS 解析能卡 11 秒，整个界面跟着僵住（见 _auto_check_update）。
+        self._bg = BackgroundCall(self)
+        # 界面停顿监视：卡顿不会留下异常堆栈，只能靠心跳检测事后复盘。
+        self.stall_watch = StallWatch(parent=self)
         # 默认落在全面体检：打开软件想知道的第一件事是「这台机器现在怎么样」。
         # 性能监控是一堆实时数字，看完还得自己判断，放在第二位更顺。
         self._current_page = "health"
@@ -414,6 +427,8 @@ class MainWindow(QMainWindow):
         self.store.dup_changed.connect(self._refresh_status_bar)
         self._build_tray()
         self._start_samplers()
+        # 心跳监视放在最后：前面是构建期，卡在里面也应该被记下来
+        self.stall_watch.start()
         # showEvent 里也会调一次，但窗口如果是隐藏启动（开机自启）就等不到，
         # 这里先设一遍，避免深色应用配浅色标题栏
         QTimer.singleShot(0, self._apply_titlebar)
@@ -421,6 +436,15 @@ class MainWindow(QMainWindow):
         # 启动后 4 秒自动查一次新版：等界面画完、系统主题也应用完再跑，
         # 免得和启动阶段的卡顿叠在一起
         QTimer.singleShot(6000, self._auto_check_update)
+
+        # 窗口圆角只在留白皮肤下开：classic 一直用系统默认方角，
+        # 这里不动它，回滚就真的是原样（见 ui/winround.py）。
+        self._rounded = None
+        if getattr(T, "SKIN", "classic") == "air":
+            from .winround import RoundedCorners
+
+            self._rounded = RoundedCorners(self, 14)
+            QTimer.singleShot(0, self, self._rounded.install)
 
     # ---------------------------------------------------------- 界面
 
@@ -515,10 +539,11 @@ class MainWindow(QMainWindow):
         side.setObjectName("Sidebar")
         self._side = side
         side.setFixedWidth(self._sidebar_width())
-        side.setStyleSheet(
-            f"#Sidebar {{ background: {T.SIDEBAR};"
-            f" border-right: 1px solid {T.BORDER}; }}"
-        )
+        # 留白皮肤不要右边那条硬线：侧栏和内容区靠底色差别分开就够了
+        edge = f" border-right: 1px solid {T.BORDER};" if getattr(
+            T, "SIDEBAR_BORDER", True
+        ) else ""
+        side.setStyleSheet(f"#Sidebar {{ background: {T.SIDEBAR};{edge} }}")
         layout = QVBoxLayout(side)
         layout.setContentsMargins(0, 8, 0, 10)
         # 导航项之间不留缝隙，否则点在 1px 间隙上会没反应
@@ -679,7 +704,8 @@ class MainWindow(QMainWindow):
         wrap = QWidget()
         wrap.setObjectName("PageArea")
         layout = QVBoxLayout(wrap)
-        layout.setContentsMargins(24, 12, 24, 16)
+        layout.setContentsMargins(getattr(T, "CONTENT_MARGIN", 24), 12,
+                                 getattr(T, "CONTENT_MARGIN", 24), 16)
         layout.setSpacing(9)
 
         top = QHBoxLayout()
@@ -700,7 +726,7 @@ class MainWindow(QMainWindow):
         title_box = QVBoxLayout()
         title_box.setContentsMargins(0, 0, 0, 0)
         title_box.setSpacing(1)
-        self.lbl_title = label("概览", 19, T.TEXT, QFont.DemiBold)
+        self.lbl_title = label("概览", getattr(T, "TITLE_SIZE", 19), T.TEXT, QFont.DemiBold)
         self.lbl_sub = label("", 11, T.TEXT_DIM)
         title_box.addWidget(self.lbl_title)
         title_box.addWidget(self.lbl_sub)
@@ -785,6 +811,13 @@ class MainWindow(QMainWindow):
             # 收进壳里之后翻译成分段页面 —— 取哪个建哪个，只是不切过去。
             if key in CLEANUP_TARGETS:
                 shell = self._ensure_page("cleanup")
+                if shell is not None:
+                    return shell.ensure_segment(key)
+                raise AttributeError(name)
+            if key in SOFTWARE_TARGETS:
+                # page_registry 这个老名字还留着：注册表并进软件管理之后，
+                # 调试脚本和新加的第三段都能这么取（建出来但不切过去）
+                shell = self._ensure_page("software")
                 if shell is not None:
                     return shell.ensure_segment(key)
                 raise AttributeError(name)
@@ -875,11 +908,6 @@ class MainWindow(QMainWindow):
                 page.set_segment(self._startup_segment)
             return page
 
-        if key == "registry":
-            from .page_registry import RegistryPage
-
-            return RegistryPage(self.store, self.tasks)
-
         if key == "software":
             from .page_software import SoftwarePage
 
@@ -900,6 +928,7 @@ class MainWindow(QMainWindow):
             page = SettingsPage(self.settings)
             page.changed.connect(self._on_settings_changed)
             page.theme_changed.connect(self.apply_theme)
+            page.skin_changed.connect(self.apply_skin)
             page.accent_changed.connect(self.apply_accent)
             return page
 
@@ -927,6 +956,9 @@ class MainWindow(QMainWindow):
         if key in CLEANUP_TARGETS:
             segment = key
             key = "cleanup"
+        elif key in SOFTWARE_TARGETS:
+            segment = key
+            key = "software"
 
         # 建页时 _ensure_page 已经喂过一帧，这里只补「本来就在、只是切回来」的情况
         existed = key in self._pages
@@ -960,6 +992,12 @@ class MainWindow(QMainWindow):
             # 这一页可能停在后台好几分钟，切回来先补一帧最新的
             feed(page, self._snapshot, self._proc_frame())
         self._lazy_start(key)
+        # 进程列表只有监控页在看。别的时候把采样放长到 8 秒 ——
+        # 一次全量遍历 450~690 ms，3 秒一次等于常驻吃掉 15% 的一个核。
+        if hasattr(self, "proc_sampler"):
+            self.proc_sampler.set_interval(
+                self.settings.process_interval_ms if key == "monitor" else 8000
+            )
         if key == "settings":
             self._refresh_cooldown_text()
 
@@ -1023,39 +1061,64 @@ class MainWindow(QMainWindow):
         任务中心串行执行，谁先完成谁先写进 store，体检页订阅了 store，
         所以每完成一项分数就往上走一格，不用等全部跑完。
 
-        三页要先建出来：扫描范围（勾选的规则、查重的目录）是页面自己的状态，
-        在这儿重写一份迟早和页面上的勾选对不上。这三页都很轻（各不到 1 MB），
-        而且只有用户按下体检时才会发生。
+        要扫的页得先建出来：扫描范围（勾选的规则、查重的目录）是页面自己的状态，
+        在这儿重写一份迟早和页面上的勾选对不上。这两页都很轻，而且只有用户
+        按下体检时才会发生。
+
+        注册表那项例外：它没有「扫描范围」这种页面状态，扫描只要 0.04 秒，
+        并进软件管理后为了它去把整个软件页（三段）建出来不划算 —— 直接派
+        任务，结果照样由 store 收进 registry，体检的 4 分因子立刻有值。
         """
+        from .page_registry import make_task as _registry_task
+
         cleanup = self._ensure_page("cleanup")
-        self._ensure_page("registry")
         self._ensure_page("health")
         # 垃圾和查重现在是「清理中心」里的两个分段：建出来但不切过去
         for segment in ("clean", "dup"):
             page = cleanup.ensure_segment(segment) if cleanup else None
             if page is not None:
                 page.start_scan()
-        self._pages["registry"].start_scan()
+        # 0.04 秒的事，不缓存：删完再看还是不是残留，靠的就是每次重扫
+        if not self.tasks.is_busy("registry"):
+            self.tasks.submit("registry", "扫描注册表", _registry_task())
         self._pages["health"].start_probe()
 
     def _auto_check_update(self) -> None:
         """启动时静默检查更新。有新版本才提示，没有就什么都不做。
 
-        同步执行：请求通常 200ms 内返回（超时上限 4 秒）。
-        试过 QThread 跨线程信号和「线程 + 轮询」两种写法，
-        在受限环境里都会卡住不返回；这个调用只在启动后跑一次，
-        为它冒线程不稳定的风险不值得。
+        **必须异步。** 这一版之前是同步调用，实测冷启动时在
+        `socket.getaddrinfo` 上卡了 11.5 秒（DNS 不受 urllib 的 timeout 约束，
+        直连 + 代理各来一次），整个界面在那十几秒里完全不能动 —— 用户报的
+        「启动后卡很久」主要就是这一条。栈证据见 8.x 节。
+
+        走 BackgroundCall：线程里只调 updater.check()，主线程定时器来取结果，
+        没有跨线程的信号槽生命周期问题（这个项目在 QThread 上踩过两次）。
         """
         from core import updater
 
-        info = updater.check()
-        if not info.ok or not info.has_update:
+        if self._bg.busy:
             return
-        self.toast(
-            f"发现新版本 v{info.latest} · 在「关于软件」里更新",
-            6000,
-            "warn",
-        )
+
+        started = time.perf_counter()
+
+        def done(info, error: str) -> None:
+            cost = time.perf_counter() - started
+            applog.logger("update").info(
+                "自动检查更新结束：%.1f 秒，ok=%s",
+                cost,
+                getattr(info, "ok", False),
+            )
+            if error or info is None:
+                return                      # 静默失败：启动时的网络错误不值得打扰
+            if not info.ok or not info.has_update:
+                return
+            self.toast(
+                f"发现新版本 v{info.latest} · 在「关于软件」里更新",
+                6000,
+                "warn",
+            )
+
+        self._bg.start(updater.check, done, timeout_ms=30000)
 
     def _install_shortcuts(self) -> None:
         """Ctrl+1..9 按侧栏顺序切页，Ctrl+0 给第 10 项，F5 重扫，Ctrl+, 设置，F1 关于。
@@ -1209,6 +1272,18 @@ class MainWindow(QMainWindow):
         """
         self.settings.theme = key
         self._apply_style(lambda: T.set_theme(key))
+
+    def apply_skin(self, name: str) -> None:
+        """切换界面皮肤（classic / air）。
+
+        留白版是试验品：切回 classic 就是完整回滚 —— 配色、圆角、侧栏形态
+        全部恢复，因为页面读的都是 theme_dark 的全局变量，没有半套状态。
+        """
+        self.settings.skin = name
+        T.set_skin(name)
+        self.settings.save()
+        self._rebuild_for_theme()
+        self.toast(f"界面风格：{'留白' if name == 'air' else '经典'}", 2200)
 
     def apply_accent(self, color: str) -> None:
         """切换强调色。空字符串表示品牌色，"system" 表示跟随系统。"""

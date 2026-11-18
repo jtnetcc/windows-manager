@@ -218,6 +218,46 @@ _current: Theme = _build(True, FALLBACK_ACCENT)
 _mode = "system"
 _accent_base = BRAND_ACCENT
 
+# ---------------------------------------------------------------- 皮肤
+#
+# 皮肤是「配色之外的那一层」：圆角多大、侧栏什么形态、面板画成切角还是圆角。
+# 现在两套：
+#   classic —— 原来的切角面板 + 紧凑信息密度（默认，回滚就是切回它）
+#   air     —— 参考稿的留白风格：大圆角、白卡片、淡青底（ui/theme_air.py）
+#
+# 页面读的都是本模块的全局变量，所以切换皮肤只要重新发布一遍再重建界面，
+# 不需要改任何页面代码。
+SKIN = "classic"
+CARD_RADIUS = 0          # 0 = 用切角（classic）；>0 = 圆角半径
+NAV_RADIUS = 5
+NAV_BAR = True           # 选中项左侧那条 3×16 的强调色竖条
+NAV_SELECTED = ""        # 选中底色，空串 = 用 ACCENT_SOFT
+SIDEBAR_BORDER = True    # 侧栏右侧是否画分隔线
+CONTENT_MARGIN = 24      # 内容区左右留白
+TITLE_SIZE = 19          # 页面大标题字号
+CARD_PADDING = 0         # 0 = 各页自己传，>0 时统一覆盖
+
+
+def set_skin(name: str) -> None:
+    """切换皮肤。切换后必须整页重建才会生效（见 MainWindow._rebuild_for_theme）。"""
+    global SKIN, CARD_RADIUS, NAV_RADIUS, NAV_BAR, NAV_SELECTED
+    global CONTENT_MARGIN, TITLE_SIZE, CARD_PADDING, SIDEBAR_BORDER
+    if name not in ("classic", "air"):
+        name = "classic"
+    SKIN = name
+    if name == "air":
+        from . import theme_air
+
+        theme_air.apply()
+        return
+    # 切回经典：把圆角那几个开关恢复默认，再重新发布一次原配色
+    CARD_RADIUS, NAV_RADIUS, NAV_BAR = 0, 5, True
+    NAV_SELECTED, CONTENT_MARGIN, TITLE_SIZE = "", 24, 19
+    SIDEBAR_BORDER = True
+    CARD_PADDING = 0
+    dark = system_is_dark() if _mode == "system" else (_mode == "dark")
+    _publish(_build(dark, _accent_base))
+
 # 下面这些是给页面用的全局变量，由 _publish 赋值
 BG = SIDEBAR = PANEL = PANEL_ALT = PANEL_SUNKEN = HOVER = ""
 BORDER = BORDER_SOFT = BORDER_STRONG = ""
@@ -277,6 +317,18 @@ def set_theme(mode: str) -> bool:
     """
     global _mode
     mode = _resolve(mode)
+
+    # 留白皮肤只有浅色一套：它改的不只是配色，还有圆角、留白和侧栏形态，
+    # 强行做深色版等于再画一遍。切到它时优先于深浅选择。
+    if SKIN == "air":
+        if mode == _mode:
+            return False
+        _mode = mode
+        from . import theme_air
+
+        theme_air.apply()
+        return True
+
     dark = system_is_dark() if mode == "system" else (mode == "dark")
     if mode == _mode and _current.dark == dark:
         return False
@@ -307,6 +359,11 @@ def set_accent(color: str | None = None) -> bool:
     if target == _accent_base:
         return False
     _accent_base = target
+    if SKIN == "air":
+        from . import theme_air
+
+        theme_air.apply()
+        return True
     _publish(_build(_current.dark, _accent_base))
     return True
 
@@ -404,7 +461,7 @@ _publish(_build(True, FALLBACK_ACCENT))
 # ---------------------------------------------------------------- 全局样式
 
 
-def app_stylesheet() -> str:
+def _classic_stylesheet() -> str:
     # 顶部「一键优化」用柔和版（淡强调色底 + 强调色字），页面自己的主按钮才留实心蓝。
     # 一屏两个实心蓝按钮并排，谁也说不清哪个更重要。
     tonal = mix(PANEL, ACCENT, 0.22 if is_dark() else 0.12)
@@ -634,3 +691,12 @@ def app_stylesheet() -> str:
 
     QSplitter::handle {{ background: {BORDER}; }}
     """
+
+
+def app_stylesheet() -> str:
+    """当前皮肤的全局样式表。"""
+    if SKIN == "air":
+        from . import theme_air
+
+        return theme_air.app_stylesheet()
+    return _classic_stylesheet()

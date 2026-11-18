@@ -12,12 +12,13 @@ from __future__ import annotations
 import os
 import platform
 import time
-from typing import NamedTuple
+from typing import Callable, NamedTuple
 
 from PySide6 import __version__ as PYSIDE_VERSION
 from PySide6.QtCore import Qt, Signal, qVersion
 from PySide6.QtGui import QFont, QPixmap
 from PySide6.QtWidgets import (
+    QApplication,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -30,6 +31,7 @@ from PySide6.QtWidgets import (
 from core import applog, config, updater, version
 
 from . import appicon, theme_dark as T
+from .bg import BackgroundCall
 from .components import Card, copy_text, font, label, open_url
 
 APP_NAME = "Windows系统管家"
@@ -48,27 +50,46 @@ PLEDGES = [
 ]
 
 class Channel(NamedTuple):
-    """一个下载来源。name 显示在左侧，url 为空视为「还没上架」。"""
+    """一个下载来源。`url` 是**取值函数**，不是字符串。
+
+    原因：国内直连那条要现签一个短时效地址（见 core/updater），签名十分钟
+    就过期。写成模块级字符串的话，程序开着一小时后点「打开」就是死链。
+    这里每次点击现取，`None` 表示这个渠道还没上架。
+
+    `url()` 的返回值**永远不进界面**：不显示、不 hint、不进剪贴板。
+    """
 
     name: str
-    url: str
+    url: Callable[[], str] | None
     note: str
 
 
-# 分发渠道。url 留空就显示「待接入」、按钮自动禁用 —— 再加一行就行，
+# GitHub 仓库地址。公开展示的是「项目在这」，不是下载直链 ——
+# 界面上一律不出现，见下面 CHANNELS 的注释。
+_GITHUB = "https://github.com/jtnetcc/windows-manager"
+
+
+def _github() -> str:
+    return _GITHUB
+
+
+# 分发渠道。url 为 None 就显示「待接入」、不摆按钮 —— 再加一行就行，
 # 页面代码不用动。
-# 地址写在这里而不是从配置读：它是软件属性，用户改不了，也不该改。
-# OSS 那条直接问 updater 要：下载地址和检查更新指向同一个对象，
-# 两边各写一份迟早会有一边忘了改。
+#
+# **地址一律不上屏。** OSS 按外网流量计费，直链被截图、被转发一次，
+# 后面别人拉的每一份都记在作者账上；桶现在是私有的，签名地址十分钟作废，
+# 但界面上依然一个字都不摆 —— 用户要的是「点一下能下载」，不是把地址抄下来。
 CHANNELS = [
     Channel(
         "GitHub",
-        "https://github.com/jtnetcc/windows-manager",
+        _github,
         "源码、版本说明与 zip 包都发布在这里",
     ),
     Channel(
-        "OSS 直链",
-        updater.download_url(),
+        # 名字不叫「OSS 直链」：那是技术黑话，而且一听就知道是哪个存储桶。
+        # 传函数本身：每次点击才取签名，拿到的才是新鲜的。
+        "国内直连",
+        updater.download_url,
         "免登录直接下载最新版，国内速度比 GitHub 快",
     ),
 ]
@@ -134,32 +155,6 @@ def _elide(text: str, width: int) -> str:
 
     metrics = QFontMetrics(font(12))
     return metrics.elidedText(text, Qt.ElideMiddle, width)
-
-
-def _short_address(url: str, width: int) -> str:
-    """放进地址列的写法。
-
-    直接 ElideMiddle 会把结尾的 `Windows-Manager.exe` 截成
-    `Windows-Manager.e`，看着像打错了。所以放不下时优先保住文件名，
-    把中间的桶内路径换成「…」：`域名/…/Windows-Manager.exe`。
-    完整地址照旧在 tooltip 里，复制按钮复制的也是完整地址。
-    """
-    from PySide6.QtGui import QFontMetrics
-
-    metrics = QFontMetrics(font(12))
-    shown = url.split("://", 1)[-1].rstrip("/")
-    if metrics.horizontalAdvance(shown) <= width:
-        return shown
-
-    host, _, rest = shown.partition("/")
-    if not rest:
-        return metrics.elidedText(shown, Qt.ElideMiddle, width)
-    name = rest.rsplit("/", 1)[-1]
-    room = width - metrics.horizontalAdvance(f"/…/{name}")
-    if room < 32:
-        return metrics.elidedText(shown, Qt.ElideMiddle, width)
-    head = metrics.elidedText(host, Qt.ElideRight, room)
-    return f"{head}/…/{name}"
 
 
 class AboutPage(QWidget):
@@ -261,17 +256,25 @@ class AboutPage(QWidget):
             self.lbl_update.setText(f"发现新版本 v{info.latest}")
             self.lbl_update.setStyleSheet(f"color: {T.AMBER};")
             self.btn_update.setText("去下载")
+            # 重建后按钮还连着「检查更新」，不重接就会再检查一遍而不是下载
+            try:
+                self.btn_update.clicked.disconnect()
+            except (RuntimeError, TypeError):
+                applog.silenced("page_about._restore_update_state")
+            self.btn_update.clicked.connect(
+                lambda: self._open_channel(updater.download_url)
+            )
         else:
             self.lbl_update.setText(f"已是最新（{version.text()}）")
             self.lbl_update.setStyleSheet(f"color: {T.GREEN};")
 
     def _check_update(self) -> None:
-        """检查更新。全应用唯一的联网动作，只在点按钮时跑。
+        """检查更新。只在点按钮时跑。
 
-        全程同步：`repaint()` 强制立刻重绘（不跑事件循环），然后阻塞请求。
-        之前用过 QThread、processEvents、singleShot 三种异步写法，
-        都会在回调阶段碰到控件已被销毁的问题；同步写最土但最稳。
-        请求通常 200ms 内返回，超时上限 4 秒。
+        **异步**：这一版之前是同步调用，冷启动/首次联网时 urllib 会在 DNS 上
+        卡十几秒（timeout 管不到 getaddrinfo），界面跟着僵住。现在走
+        BackgroundCall：线程里只调 updater.check()，主线程定时器来取结果，
+        没有跨线程的信号槽生命周期问题。
         """
         if getattr(self, "_checking", False):
             return
@@ -279,41 +282,51 @@ class AboutPage(QWidget):
         self.btn_update.setEnabled(False)
         self.lbl_update.setText("正在检查…")
         self.lbl_update.setStyleSheet(f"color: {T.TEXT_DIM};")
-        self.lbl_update.repaint()
 
-        from core import updater
+        if getattr(self, "_bg", None) is None:
+            self._bg = BackgroundCall(self)
 
-        info = updater.check()
+        def done(info, error: str) -> None:
+            self._checking = False
+            self.btn_update.setEnabled(True)
 
-        self._checking = False
-        self.btn_update.setEnabled(True)
+            if error or info is None:
+                self.lbl_update.setText("检查失败")
+                self.lbl_update.setToolTip(error or "")
+                self.lbl_update.setStyleSheet(f"color: {T.TEXT_DIM};")
+                return
 
-        if not info.ok:
-            self.lbl_update.setText("检查失败")
-            self.lbl_update.setToolTip(info.error or "")
-            self.lbl_update.setStyleSheet(f"color: {T.TEXT_DIM};")
-            return
+            if not info.ok:
+                self.lbl_update.setText("检查失败")
+                self.lbl_update.setToolTip(info.error or "")
+                self.lbl_update.setStyleSheet(f"color: {T.TEXT_DIM};")
+                return
 
-        if not info.has_update:
-            self.lbl_update.setText(f"已是最新（{version.text()}）")
-            self.lbl_update.setToolTip("")
-            self.lbl_update.setStyleSheet(f"color: {T.GREEN};")
-            return
+            if not info.has_update:
+                self.lbl_update.setText(f"已是最新（{version.text()}）")
+                self.lbl_update.setToolTip("")
+                self.lbl_update.setStyleSheet(f"color: {T.GREEN};")
+                return
 
-        self.lbl_update.setText(f"发现新版本 v{info.latest}")
-        self.lbl_update.setToolTip(info.notes or "")
-        self.lbl_update.setStyleSheet(f"color: {T.AMBER};")
-        self.btn_update.setText("去下载")
-        try:
-            self.btn_update.clicked.disconnect()
-        except (RuntimeError, TypeError):
-            applog.silenced("page_about._check_update")
-        from PySide6.QtCore import QUrl
-        from PySide6.QtGui import QDesktopServices
+            self.lbl_update.setText(f"发现新版本 v{info.latest}")
+            self.lbl_update.setToolTip(info.notes or "")
+            self.lbl_update.setStyleSheet(f"color: {T.AMBER};")
+            self.btn_update.setText("去下载")
+            try:
+                self.btn_update.clicked.disconnect()
+            except (RuntimeError, TypeError):
+                applog.silenced("page_about._check_update")
+            # 现取而不是用 info.url：签名十分钟过期，页面开着放一会儿再点，
+            # 用检查时那一份就是死链。
+            self.btn_update.clicked.connect(
+                lambda: self._open_channel(updater.download_url)
+            )
 
-        self.btn_update.clicked.connect(
-            lambda: QDesktopServices.openUrl(QUrl(info.url))
-        )
+        if not self._bg.start(updater.check, done, timeout_ms=20000):
+            # 后台还在跑（比如刚切页又点了一次），把状态复位，不要卡在「正在检查」
+            self._checking = False
+            self.btn_update.setEnabled(True)
+            self.lbl_update.setText("正在检查…")
 
     def _promise_card(self) -> Card:
         card = Card(padding=12, spacing=9)
@@ -336,7 +349,7 @@ class AboutPage(QWidget):
         card = Card(padding=12, spacing=4)
         card.body().addWidget(label("获取与分发", 14, T.TEXT, QFont.DemiBold))
         hint = label(
-            "在浏览器里打开地址就能下载；zip 包带 CRC 校验，传坏了解压时就能发现。",
+            "点「打开」在浏览器里下载；zip 包带 CRC 校验，传坏了解压时就能发现。",
             10,
             T.TEXT_DIM,
         )
@@ -376,7 +389,7 @@ class AboutPage(QWidget):
         return card
 
     def _channel_row(self, channel: Channel) -> QWidget:
-        """一个来源：名称 + 地址（未上架则显示状态）+ 复制 / 打开。"""
+        """一个来源：名称 + 一句说明 + 「打开」。"""
         box = QWidget()
         box.setFixedHeight(26)
         row = QHBoxLayout(box)
@@ -387,38 +400,29 @@ class AboutPage(QWidget):
         name.setFixedWidth(62)
         row.addWidget(name, 0)
 
-        if not channel.url:
-            # 没有地址就别摆一颗点不动的按钮，直接说清楚要等什么
+        if channel.url is None:
+            # 没上架就别摆一颗点不动的按钮，直接说清楚要等什么
             row.addWidget(label(f"待接入 · {channel.note}", 11, T.TEXT_DIM), 1)
             return box
 
-        # 地址列给固定宽：两个来源的域名长短不一，跟着文字走会让右边的按钮
-        # 一行一个位置。放不下时保住文件名，中间省略（见 _short_address）。
-        # 380 而不是 240：OSS 直链比 GitHub 长一截，窄了只能截到文件名中间。
-        addr = label(_short_address(channel.url, 380), 12, T.ACCENT)
-        addr.setFixedWidth(380)
-        addr.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        addr.setToolTip(f"{channel.url}\n{channel.note}")
-        row.addWidget(addr, 0)
-        # 按钮靠右：伸展项放在地址后面，否则两个按钮会紧贴地址挤在行中间
-        row.addStretch(1)
+        # 一行只有「名称 + 一句说明 + 打开」。**地址不建 label、不进 tooltip、
+        # 不给「复制」** —— 复制等于把地址直接递进剪贴板，和显示一样是暴露。
+        # 要下载就点按钮，由程序自己去那个地址。
+        note = label(channel.note, 11, T.TEXT_DIM)
+        row.addWidget(note, 1)
 
-        # 用 Ghost 和「复制」「检查更新」保持一致。
+        # 用 Ghost 和「检查更新」保持一致。
         # 之前用 Tonal，它的 QSS 里带 min-height:30 和左右 16px 内边距，
         # 和 setFixedSize(56,24) 冲突，文字被挤得贴边，看着像坏了。
         btn_open = QPushButton("打开")
         btn_open.setObjectName("Ghost")
         btn_open.setFixedSize(56, 24)
         btn_open.setCursor(Qt.PointingHandCursor)
-        btn_open.clicked.connect(lambda _c=False, url=channel.url: self._open_url(url))
+        # 传取值函数而不是字符串：签名十分钟过期，点的时候现取才新鲜。
+        btn_open.clicked.connect(
+            lambda _c=False, getter=channel.url: self._open_channel(getter)
+        )
         row.addWidget(btn_open, 0)
-
-        btn_copy = QPushButton("复制")
-        btn_copy.setObjectName("Ghost")
-        btn_copy.setFixedSize(52, 24)
-        btn_copy.setCursor(Qt.PointingHandCursor)
-        btn_copy.clicked.connect(lambda _c=False, url=channel.url: self._copy_url(url))
-        row.addWidget(btn_copy, 0)
         return box
 
     def _env_card(self) -> Card:
@@ -471,17 +475,40 @@ class AboutPage(QWidget):
 
     # ---------------------------------------------------------- 交互
 
+    def _open_channel(self, getter: Callable[[], str]) -> None:
+        """点「打开 / 去下载」：先取地址，再交给浏览器。
+
+        取地址可能要走一次网络（换签名），所以先把提示画出来再请求，
+        否则点下去那几百毫秒窗口是死的。`_opening` 防重入 ——
+        重绘走的是 processEvents，这时候用户还能再点一次。
+        """
+        if getattr(self, "_opening", False):
+            return
+        self._opening = True
+        try:
+            self.message.emit("正在获取下载链接…")
+            # 只为把上面那句话画出来；这一步会处理事件队列，所以上面的重入锁
+            # 不是可选项
+            QApplication.processEvents()
+            try:
+                url = getter()
+            except Exception as exc:  # noqa: BLE001 — 界面线程里不许让异常穿出去
+                self.message.emit(f"取下载链接失败：{exc}")
+                return
+            if not url:
+                self.message.emit("这个渠道暂时不可用")
+                return
+            self._open_url(url)
+        finally:
+            self._opening = False
+
     def _open_url(self, url: str) -> None:
+        # 打不开就直说打不开。**不要退化成「把地址复制到剪贴板」** ——
+        # 那等于悄悄把地址递出去，用户一粘贴就上屏了。
         if not open_url(url):
-            # 没有默认浏览器的情况极少，但点了没反应比给个提示更糟
-            copy_text(url)
-            self.message.emit("打不开浏览器，地址已复制")
+            self.message.emit("打不开浏览器，请检查默认浏览器设置")
             return
         self.message.emit("已在浏览器中打开")
-
-    def _copy_url(self, url: str) -> None:
-        copy_text(url)
-        self.message.emit("下载地址已复制")
 
     def _copy_env(self) -> None:
         lines = [f"{APP_NAME} {version.text()}"]
@@ -492,9 +519,8 @@ class AboutPage(QWidget):
             f" · {platform.version()}"
         )
         lines.append(f"数据目录：{config.config_dir()}")
-        for channel in CHANNELS:
-            if channel.url:
-                lines.append(f"下载地址（{channel.name}）：{channel.url}")
+        # 这里原来会把各渠道的下载地址一并抄进剪贴板。删掉：用户要报问题时
+        # 复制的是版本信息，不是分发链接，没必要让地址跟着跑出去。
         lines.append("免费开源 · 无广告 · 默认不联网")
         copy_text("\n".join(lines))
         self.message.emit("版本信息已复制")
