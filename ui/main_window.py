@@ -41,6 +41,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
+    QScrollBar,
     QStackedWidget,
     QSystemTrayIcon,
     QVBoxLayout,
@@ -325,6 +326,11 @@ class MainWindow(QMainWindow):
         kind = event.type()
 
         if kind == QEvent.ToolTip:
+            # 提示框自己不参与：否则 raise_() / move() 引发的 ToolTip 事件
+            # 会递归进来，表现为提示框闪一下又消失
+            if isinstance(obj, (tooltip.Tip, QScrollBar)):
+                # 提示框自己不参与；滚动条上也不弹内容提示（那里只有拖动条）
+                return False
             if isinstance(obj, QWidget):
                 text = tooltip.text_at(obj, event.pos())
                 if text:
@@ -341,9 +347,13 @@ class MainWindow(QMainWindow):
         elif kind in (
             QEvent.Leave,
             QEvent.MouseButtonPress,
+            QEvent.MouseButtonRelease,
             QEvent.Wheel,
+            QEvent.Scroll,          # 内容滚动后锚点已失效，旧提示不能再留
+            QEvent.Hide,
             QEvent.KeyPress,
             QEvent.WindowDeactivate,
+            QEvent.WindowStateChange,
         ):
             self._tip.hide()
 

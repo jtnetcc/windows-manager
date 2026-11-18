@@ -41,6 +41,9 @@ class Tip(QWidget):
         # 圆角靠透明背景才露得出来
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
+        # 提示框不能吃掉鼠标事件：鼠标滑过去之后仍然要能点到底下的表格/按钮。
+        # 位置偏右下 14/20 只能避开「刚弹出」那一刻，之后鼠标移动过来是常态。
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self._text = ""
         self._anchor = QPoint()
         self._font = QFont(self.font())
@@ -50,26 +53,39 @@ class Tip(QWidget):
         self._timer.timeout.connect(self.hide)
 
     def show_text(self, text: str, global_pos: QPoint) -> None:
-        if not text:
+        if not text or not text.strip():
             self.hide()
             return
-        self._text = text
-        metrics = QFontMetrics(self._font)
-        # 先按最大宽度折行量一遍：长路径自动换行，短文本不会被撑成一条
-        bounds = metrics.boundingRect(
-            QRect(0, 0, MAX_WIDTH, 10000),
-            Qt.TextWordWrap | Qt.AlignLeft,
-            text,
-        )
-        self.resize(bounds.width() + PAD_X * 2, bounds.height() + PAD_Y * 2)
+        self._text = text.rstrip()
 
-        # 右下偏一点，别正好压在鼠标下面；贴到屏幕边缘时往回收
-        pos = global_pos + QPoint(14, 20)
         screen = QApplication.screenAt(global_pos) or QApplication.primaryScreen()
         area = screen.availableGeometry()
-        pos.setX(max(area.left() + 2, min(pos.x(), area.right() - self.width() - 4)))
-        pos.setY(max(area.top() + 2, min(pos.y(), area.bottom() - self.height() - 4)))
-        self.move(pos)
+
+        # 量文本时要用「真正绘制的宽度」。以前按 MAX_WIDTH 量、绘制区却比它
+        # 窄 18px（左右内边距），临界长度会多折一行，最后一行被裁掉。
+        # 先把可用宽度夹到屏幕内，再按同一套 flags 量高度。
+        max_w = max(160, min(MAX_WIDTH, area.width() - 16))
+        paint_w = max(80, max_w - PAD_X * 2 - 2)
+        flags = Qt.TextWordWrap | Qt.AlignLeft | Qt.AlignTop
+        metrics = QFontMetrics(self._font)
+        bounds = metrics.boundingRect(
+            QRect(0, 0, paint_w, max(64, area.height() - 16)), flags, self._text
+        )
+        width = min(bounds.width() + PAD_X * 2 + 2, area.width() - 8)
+        height = min(bounds.height() + PAD_Y * 2 + 4, area.height() - 8)
+        self.resize(max(48, width), max(28, height))
+
+        # 先放右下；越界就翻到鼠标左侧 / 上方（比一味夹到边缘更不挡内容），
+        # 最后再夹一次，保证整框都在屏幕可用区内。
+        x = global_pos.x() + 14
+        y = global_pos.y() + 20
+        if x + self.width() > area.right() - 4:
+            x = global_pos.x() - self.width() - 14
+        if y + self.height() > area.bottom() - 4:
+            y = global_pos.y() - self.height() - 20
+        x = max(area.left() + 4, min(x, area.right() - self.width() - 4))
+        y = max(area.top() + 4, min(y, area.bottom() - self.height() - 4))
+        self.move(x, y)
 
         self._anchor = global_pos
         self.show()
@@ -94,7 +110,7 @@ class Tip(QWidget):
         painter.setFont(self._font)
         painter.drawText(
             body.adjusted(PAD_X, PAD_Y, -PAD_X, -PAD_Y),
-            Qt.TextWordWrap | Qt.AlignLeft | Qt.AlignVCenter,
+            Qt.TextWordWrap | Qt.AlignLeft | Qt.AlignTop,
             self._text,
         )
 
@@ -113,8 +129,11 @@ def text_at(obj: QWidget, pos: QPoint) -> str:
         index = view.indexAt(pos)
         if index.isValid():
             tip = index.data(Qt.ToolTipRole)
-            if tip:
-                return str(tip)
+            return str(tip) if tip else ""
+        # 表格/列表的空白处不弹提示。以前会顺着父链找到 view 自己的
+        # toolTip（例如「点表头排序」），鼠标停在空白格上就冒出来一句
+        # 和位置无关的说明，看起来就像提示内容不对/显示不全。
+        return ""
 
     widget: QWidget | None = obj
     while widget is not None:
