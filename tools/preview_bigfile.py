@@ -51,16 +51,24 @@ def main() -> None:
     folder = make_files()
     app = QApplication(sys.argv[:1])
     settings = config.Settings.load()
+    # 固定成「浅色」：否则 4 秒一次的系统主题轮询发现系统是深色，
+    # 会把整个界面重建掉，截图过程中页面对象会突然失效
+    settings.theme = "light"
     theme_dark.set_theme("light")
     app.setStyleSheet(theme_dark.app_stylesheet())
     window = MainWindow(settings)
     window.resize(1100, 720)
     window.show()
     window.switch_page("bigfile")
-    page = window.page_bigfile
+    # 页面合并后 window.page_bigfile 是 SpacePage 外壳，大文件视图在 .files
+    space = window.page_bigfile
+    # 空间分析会在建页时自动开扫，和截图用的扫描抢串行队列，先掐掉并切到「大文件」段
+    window.tasks.cancel_many("space", "space_sub", "space_refresh")
+    space.set_segment("files")
+    page = space.files
     page._roots = [folder]
     page.root_box.blockSignals(True)
-    page.root_box.setCurrentIndex(5)  # 选择目录…
+    page.root_box.setCurrentIndex(page._custom_scope_index())  # 自定义目录
     page.root_box.blockSignals(False)
 
     def snap(name: str) -> None:
@@ -73,13 +81,13 @@ def main() -> None:
         print("已保存", name)
 
     def video() -> None:
-        page._on_kind_changed(1)
+        page._on_type_selected("video")
         page.size_box.setCurrentIndex(0)
         page.start_scan()
         QTimer.singleShot(3000, video_done)
 
     def video_done() -> None:
-        for row in (1, 3):
+        for row in range(min(2, page.table.rowCount())):
             page.table.item(row, 0).setCheckState(Qt.Checked)
         app.processEvents()
         snap("preview_bigfile_video.png")
@@ -87,21 +95,21 @@ def main() -> None:
         app.processEvents()
         snap("preview_bigfile_sort.png")
         page._sort_by(3)          # 回到按体积
-        page._on_kind_changed(5)  # 安装包
+        page._on_type_selected("installer")  # 安装包
         page.start_scan()
         QTimer.singleShot(3000, installer_done)
 
     def installer_done() -> None:
         app.processEvents()
         snap("preview_bigfile_installer.png")
-        page._on_kind_changed(2)  # 图片：演示目录里没有 -> 空态
+        page._on_type_selected("image")  # 图片：演示目录里没有 -> 空态
         page.start_scan()
         QTimer.singleShot(2500, empty_done)
 
     def empty_done() -> None:
         app.processEvents()
         snap("preview_bigfile_empty.png")
-        page._on_kind_changed(0)
+        page._on_type_selected("all")
         page.size_box.setCurrentIndex(0)
         page.start_scan()
         QTimer.singleShot(3000, all_done)
@@ -113,7 +121,7 @@ def main() -> None:
         QTimer.singleShot(400, small_done)
 
     def small_done() -> None:
-        page._on_kind_changed(1)
+        page._on_type_selected("video")
         page.size_box.setCurrentIndex(0)
         page.start_scan()
         QTimer.singleShot(3000, small_shot)
@@ -123,6 +131,9 @@ def main() -> None:
         window._shutdown()
         app.quit()
 
+    # 建页时用 singleShot(0) 排了一次空间分析扫描，会在我们取消之后才真正启动，
+    # 再补一枪取消，否则后面的扫描全排在它后面（串行队列）
+    QTimer.singleShot(600, lambda: window.tasks.cancel_many("space", "space_sub", "space_refresh"))
     QTimer.singleShot(700, video)
     app.exec()
 

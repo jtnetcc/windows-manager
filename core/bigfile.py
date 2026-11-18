@@ -139,16 +139,18 @@ class BigFile:
 # ------------------------------------------------------------------ 扫描范围
 
 PRESETS: list[tuple[str, str]] = [
-    # 单分区机器上「用户目录」只覆盖 C://Users//xxx，装在 C://Games、
-    # C://Program Files 的东西全看不见，所以整个系统盘放第一位并做默认。
+    # 默认扫全部磁盘。早先默认「系统盘」，装在 D:/E: 的游戏、素材、虚拟机镜像
+    # 全看不见 —— 而这几类恰恰是最占地方的。
+    ("drives", "所有磁盘"),
     ("system", "系统盘"),
     ("home", "用户目录"),
     ("downloads", "下载文件夹"),
     ("desktop", "桌面"),
     ("media", "视频与图片"),
-    ("drives", "整个磁盘"),
-    ("custom", "选择目录…"),
+    ("custom", "自定义目录…"),
 ]
+
+DEFAULT_SCOPE = "drives"
 
 
 def _user_dirs(*names: str) -> list[str]:
@@ -161,10 +163,33 @@ def _user_dirs(*names: str) -> list[str]:
     return found
 
 
+def scope_items() -> list[tuple[str, str]]:
+    """界面「扫描范围」下拉的条目。
+
+    盘符项按机器实际情况生成（插在「系统盘」之后），不是写死的 ——
+    每台机器的分区不一样，写死会让下拉里出现不存在的盘。
+    """
+    items = list(PRESETS[:2])
+    system = os.environ.get("SystemDrive", "C:").upper()
+    for root in winpath.fixed_drives():
+        letter = root[0].upper()
+        if f"{letter}:" == system:
+            continue          # 系统盘已经有单独一项，不再重复
+        items.append((f"drive:{letter}", f"{letter}: 盘"))
+    items += list(PRESETS[2:])
+    return items
+
+
 def preset_roots(key: str) -> list[str]:
     """把界面上的「扫描范围」翻译成目录列表。"""
+    if key == "drives":
+        return winpath.fixed_drives()
     if key == "system":
         return [os.environ.get("SystemDrive", "C:") + "\\"]
+    if key.startswith("drive:"):
+        letter = key.split(":", 1)[1].strip().upper()[:5]
+        root = f"{letter}:\\"
+        return [root] if os.path.isdir(root) else []
     if key == "home":
         return winpath.home_roots()
     if key == "downloads":
@@ -173,8 +198,6 @@ def preset_roots(key: str) -> list[str]:
         return _user_dirs("Desktop", "桌面")
     if key == "media":
         return _user_dirs("Videos", "视频", "Pictures", "图片", "Music", "音乐")
-    if key == "drives":
-        return winpath.fixed_drives()
     return []
 
 

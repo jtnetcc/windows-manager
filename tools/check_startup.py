@@ -145,9 +145,12 @@ def main() -> int:
             space_page.set_segment(key)
             app.processEvents()
             assert space_page.current_segment() == key, f"分段切不过去：{key}"
-        assert space_page.files._roots == bf.preset_roots("system"), "大文件默认范围不是系统盘"
-        assert bf.PRESETS[0][0] == "system", "「系统盘」不在范围列表第一位"
-        print("磁盘空间两个分段可切 · 大文件默认系统盘 ✓")
+        # 2026-11-18 起默认扫「所有本地磁盘」，不再只看系统盘
+        assert space_page.files._roots == bf.preset_roots("drives"), "大文件默认范围不是所有磁盘"
+        assert bf.DEFAULT_SCOPE == "drives", "默认范围常量不是 drives"
+        assert bf.scope_items()[0][0] == "drives", "「所有磁盘」不在下拉第一位"
+        assert bf.preset_roots("drives"), "没有枚举到本地磁盘"
+        print("磁盘空间两个分段可切 · 大文件默认所有磁盘 ✓")
         win.tasks.cancel_many("space", "space_sub")
 
         # 系统信息：激活卡要起 cscript，1~2 秒才回来，单独排一个轮询
