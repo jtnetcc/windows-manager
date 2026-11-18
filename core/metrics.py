@@ -1,7 +1,7 @@
 """跨平台系统指标采集。
 
 设计成「采集器 → 不可变快照」：UI 只读快照，不直接碰 psutil。
-以后要加 macOS 实现，只需要换掉 MetricsCollector 内部，页面代码不用动。
+采集逻辑与页面解耦：换实现只动 MetricsCollector，页面代码不用动。
 """
 
 from __future__ import annotations

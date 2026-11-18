@@ -43,18 +43,6 @@ PROTECTED_FILES_WINDOWS = (
     r"c:\bootnxt",
 )
 
-# macOS 侧的前缀（提前留好，等 macos 后端接入时使用）
-PROTECTED_PREFIXES_MACOS = (
-    "/system",
-    "/library",
-    "/usr",
-    "/bin",
-    "/sbin",
-    "/private",
-    "/applications",
-)
-
-
 def is_windows() -> bool:
     return sys.platform == "win32"
 
@@ -107,9 +95,6 @@ def is_protected(
     if os.path.dirname(parent) == parent:  # 已经是根
         return True
 
-    if not is_windows():
-        return _check_macos(canon)
-
     # 3. 系统关键文件
     if canon in PROTECTED_FILES_WINDOWS:
         return True
@@ -142,17 +127,6 @@ def is_protected(
     except (OSError, ValueError):
         applog.silenced("safety.is_protected")
 
-    return False
-
-
-def _check_macos(canon: str) -> bool:
-    posix = canon.replace("\\", "/")
-    for prefix in PROTECTED_PREFIXES_MACOS:
-        if posix == prefix or posix.startswith(prefix + "/"):
-            return True
-    home = os.path.realpath(str(Path.home())).lower()
-    if posix == home:
-        return True
     return False
 
 

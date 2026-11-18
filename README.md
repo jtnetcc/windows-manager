@@ -76,8 +76,7 @@ python tools/build_installer.py --build   # 安装包 setup.exe（约 64 MB）
 
 产物：`dist/Windows系统管家.exe`（onefile，启动即申请管理员）、
 `dist/Windows系统管家-vX.Y.Z-setup.exe`（按用户安装、可卸载）。
-macOS 打包脚本在 `tools/build_macos.py`，**只能在 macOS 上跑**，
-且当前代码是 Windows 专用的，详见 [`docs/打包说明.md`](docs/打包说明.md)。
+本项目只发布 Windows 版，详见 [`docs/打包说明.md`](docs/打包说明.md)。
 
 ## 版本与回滚
 
@@ -109,8 +108,7 @@ python tools/releases.py --to 0.0.37  # 回滚到该版本
 ## 文档
 
 - [`docs/交接文档.md`](docs/交接文档.md) —— 架构、设计决策、踩过的坑（**改动前先读**，2200 行）
-- [`docs/打包说明.md`](docs/打包说明.md) —— Windows 便携版/安装包、macOS .dmg、签名与 CI
-- [`docs/macOS适配指南.md`](docs/macOS适配指南.md) —— 在 Mac 上做移植的入口：平台层怎么切、先改哪页
+- [`docs/打包说明.md`](docs/打包说明.md) —— Windows 便携版/安装包、签名与 CI
 - [`docs/待接入排查与下步方案.md`](docs/待接入排查与下步方案.md) —— 未完成项与优先级
 - [`docs/整改方案.md`](docs/整改方案.md) —— 重构路线图
 - [`docs/GrClean调研与整合方案.md`](docs/GrClean调研与整合方案.md) / [`docs/C盘扫描加强方案.md`](docs/C盘扫描加强方案.md) —— 专项调研

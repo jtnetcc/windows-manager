@@ -179,99 +179,6 @@
 - 注册表清理：收益低、风险高，建议只做「只读检测 + 备份后删除」，且默认关闭
 - 卸载残留 / 目录迁移 / 系统快照：工程量大，且容易造成用户数据事故
 
-## 六、Windows + macOS 双平台架构
-
-这是本次要提前想清楚的事，因为**现在不做抽象，以后就要重写**。
-
-### 6.1 现状与障碍
-
-`core/` 里现在有四处硬绑 Windows：
-
-| 文件 | 依赖 |
-|---|---|
-| `core/winmem.py` | `NtQuerySystemInformation` / `NtSetSystemInformation` / `SeProfileSingleProcessPrivilege` |
-| `core/optimizer.py` | `EnumWindows` / `GetWindowTextLengthW` / `TerminateProcess` |
-| `core/apps.py` | 注册表 Uninstall 三处键 |
-| `core/metrics.py` | 引用 `winmem` 取内存；`nvidia-smi` |
-
-UI 层（`ui/`）是纯 PySide6，本身跨平台，基本不用改。
-
-### 6.2 推荐结构
-
-```
-core/
-  platform/
-    __init__.py        # 按 sys.platform 选实现，导出统一接口
-    base.py            # Protocol：SystemBackend
-    windows.py         # 现有 winmem + optimizer 的 Win32 部分
-    macos.py           # mach / psutil / diskutil 实现
-  health.py            # 纯函数评分（跨平台）
-  safety.py            # 路径保护（跨平台，按平台给不同前缀表）
-  cleaner.py           # 清理执行器（跨平台，规则由 JSON 提供）
-  rules/builtin.json   # 内置清理规则，按平台分组
-ui/                    # PySide6，不改
-```
-
-`SystemBackend` 协议先定这几个方法，够用且好实现：
-
-```python
-class SystemBackend(Protocol):
-    def memory_snapshot(self) -> MemSnapshot: ...
-    def optimize_memory(self, deep: bool) -> OptimizeResult: ...
-    def process_list(self, limit: int) -> list[dict]: ...
-    def installed_apps(self) -> list[InstalledApp]: ...
-    def startup_entries(self) -> list[StartupEntry]: ...
-    def disk_health(self) -> list[DiskHealth]: ...
-```
-
-### 6.3 能力映射表
-
-| 能力 | Windows | macOS |
-|---|---|---|
-| 内存明细 | `NtQuerySystemInformation(80)` | `host_statistics64` / `vm_stat` |
-| 释放内存 | `NtSetSystemInformation(80,2/4)` | 无等价接口（见 6.4） |
-| 进程列表 / 进程树 | psutil | psutil |
-| 已装软件 | 注册表 Uninstall 三键 | `/Applications` + `pkgutil --pkgs` |
-| 启动项 | Run 键 + 启动文件夹 + schtasks | `~/Library/LaunchAgents`、`/Library/LaunchDaemons` plist |
-| 磁盘健康 | `Get-PhysicalDisk` / `fsutil` | `diskutil info` / `smartctl` |
-| 垃圾目录 | `%TEMP%`、`LocalAppData` | `~/Library/Caches`、`/tmp`、`~/Library/Logs` |
-| 回收站 | `SHQueryRecycleBin` | `~/.Trash` |
-| 权限 | UAC 提权（`ShellExecuteW runas`） | 完全磁盘访问权限 + 辅助功能授权 |
-
-### 6.4 必须提前接受的三个现实
-
-1. **macOS 上没有「一键清内存」这种东西。** macOS 的内存管理策略（主动压缩、按需回收
-   inactive 页）和 Windows 完全不同，第三方工具所谓「释放内存」要么是 `purge`（需 root，
-   且会拖慢后续性能），要么纯粹是心理安慰。Mac 侧的对应功能应该诚实地改成
-   **「找出内存大户 + 引导退出/重启」**，而不是假装能清。
-2. **macOS 需要用户手动授权「完全磁盘访问权限」**，否则扫不到 `~/Library` 下的缓存。
-   首次启动要引导用户去系统设置里勾选，且勾选后需要重启进程才生效。
-3. **分发成本**：macOS 不签名不公证的话，用户下载后会被 Gatekeeper 拦住，必须
-   右键→打开才能运行。要正经分发得有 Apple Developer 账号（99 美元/年）+ 公证流程。
-
-### 6.5 三条路线对比
-
-| 路线 | 做法 | 优点 | 缺点 |
-|---|---|---|---|
-| **A（推荐）** | 保持 Python + PySide6，抽 `core/platform/` | 一份 UI、一份业务，功能天然同步；现有代码 90% 可复用 | Mac 上不是原生观感；包体大（~36MB）；需处理权限/公证 |
-| B | 重写为 Electron + Vue（和 GrClean 同栈） | 一套 UI 通吃三端，生态成熟，主题/多语言现成 | 全部重写，Windows 侧现有成果作废；内存占用比现在还高 |
-| C | 内核 Python 做本地服务，UI 各自原生（Win: PySide6 / Mac: SwiftUI） | 各自原生体验最好 | 两套 UI 维护翻倍，功能极易不同步 |
-
-**建议走 A。** 理由：我们已经有 6 套主题、8 个功能页、完整的内存优化链路，这些
-重写成本远大于收益；而 PySide6 本身是跨平台的，真正需要隔离的只有那四个文件里的
-系统调用。
-
-### 6.6 落地步骤（不影响当前 Windows 功能）
-
-1. 定义 `core/platform/base.py` 的 Protocol（先只抽内存/进程/已装软件三项）
-2. 把 `winmem` + `optimizer` 的 Win32 部分搬进 `core/platform/windows.py`，
-   原模块改成转发，保证现有 UI 一行不用改
-3. `core/metrics.py` 里对 `winmem` 的直接引用改成 `backend.memory_snapshot()`
-4. 新建 `core/platform/macos.py` 空实现（`NotImplementedError`），先把接口跑通
-5. 后续在 Mac 上逐个补实现，UI 侧只加「当前平台不支持」的降级提示
-
-这样 Windows 功能不会因为跨平台改造而中断，Mac 侧可以慢慢补。
-
 ## 七、风险清单
 
 | 风险 | 说明 | 应对 |
@@ -279,7 +186,6 @@ class SystemBackend(Protocol):
 | 误删用户数据 | 清理类功能最致命的问题 | 强制走 `safety.is_protected()`；默认删到回收站；删除前出预览清单 |
 | 许可证 | GrClean 代码不可用 | 只借鉴思路，自己实现；文档留痕说明来源 |
 | 杀软误报 | 清理 + 提权 + 改注册表，行为特征像恶意软件 | 不混淆、不静默删除、开源、代码签名 |
-| macOS 权限 | 完全磁盘访问 / 辅助功能 | 首次启动引导 + 权限状态检测 + 降级提示 |
 | 功能膨胀 | 26 个功能页会让 UI 变成杂物间 | 按「监控 / 清理 / 工具」三组分区，不做全量对标 |
 
 ## 八、下一步建议

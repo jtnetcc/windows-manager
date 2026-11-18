@@ -1,8 +1,6 @@
 name: build
 
-# 两平台各自出包，互不影响：
-#   windows-2022 → 便携版 exe + 安装包 exe
-#   macos-14     → .app + .dmg（注意：macOS 版目前只是「能装但不支持」的壳）
+# 只出 Windows 产物（便携版 exe + 安装包）。本项目不发布其它平台版本。
 #
 # 产物在 Actions 的 Artifacts 里下载，不自动发布到分发渠道 ——
 # 发布仍走 tools/sync_oss.py + tools/push_github.py，避免 CI 拿到密钥。
@@ -40,30 +38,3 @@ jobs:
           path: |
             dist/Windows系统管家.exe
             dist/Windows系统管家-v*-setup.exe
-
-  macos:
-    runs-on: macos-14
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-          cache: pip
-
-      - name: 安装依赖
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements-build.txt
-
-      # 想让用户双击不被 Gatekeeper 拦，需要在仓库 Secrets 里配
-      # CODESIGN_IDENTITY / APPLE_ID / APPLE_TEAM_ID / APPLE_APP_PASSWORD
-      - name: 打包 .app / .dmg
-        env:
-          CODESIGN_IDENTITY: ${{ secrets.CODESIGN_IDENTITY }}
-        run: python tools/build_macos.py
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: macos-dmg
-          path: dist/*.dmg

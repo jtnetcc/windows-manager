@@ -21,39 +21,20 @@ def _require_windows() -> None:
     为什么放在最前面：这个程序的每一项功能都长在 Windows 上 —— 注册表
     （winreg）、内存统计（GlobalMemoryStatusEx）、磁盘健康（DeviceIoControl）、
     启动项（schtasks / 注册表 Run 键）、回收站（SHQueryRecycleBin）、
-    单实例（命名互斥体）。在 macOS 上连 `import core.winmem` 都会失败，
+    单实例（命名互斥体）。换到别的系统上，连 `import core.winmem` 都会失败，
     直接抛 ImportError 用户只会看到「程序意外退出」。
 
-    打包出来的 macOS 版（.dmg）因此是一个**能安装、能启动、但会明确告知
-    不支持**的壳子。真要支持 macOS，得按模块重写这套平台层，
-    详见 docs/打包说明.md 的「macOS 支持现状」。
+    这里不做任何「兼容层」或「降级模式」：本软件只发布 Windows 版。
     """
     if sys.platform == "win32":
         return
 
-    lines = [
-        "Windows系统管家 只能在 Windows 上运行。",
-        f"当前系统：{sys.platform}",
+    print(
+        "Windows系统管家 只能在 Windows 上运行。\n"
+        f"当前系统：{sys.platform}\n"
         "它依赖注册表、WMI、DeviceIoControl 等 Windows 专有接口。",
-    ]
-    text = "\n".join(lines)
-    print(text, file=sys.stderr)
-    if sys.platform == "darwin":
-        # .app 没有控制台，只能借系统弹窗说清楚
-        import subprocess
-
-        script = (
-            'display alert "Windows系统管家 只支持 Windows" '
-            'message "当前系统无法运行本程序。\\n\\n'
-            '它依赖注册表、WMI、DeviceIoControl 等 Windows 专有接口。" '
-            'as critical buttons {"好"} default button 1'
-        )
-        try:
-            subprocess.run(
-                ["osascript", "-e", script], timeout=15, check=False
-            )
-        except Exception:
-            pass
+        file=sys.stderr,
+    )
     raise SystemExit(2)
 
 
