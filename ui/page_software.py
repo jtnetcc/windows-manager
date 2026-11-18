@@ -35,6 +35,8 @@ from core import apps as appmgr
 from core import leftover
 from core.store import SoftwareState
 
+from .bg import BackgroundCall
+
 from . import theme_dark as T
 from .components import (
     Card,
@@ -151,6 +153,9 @@ class SoftwarePage(QWidget):
 class InstalledView(QWidget):
     """已安装程序列表：搜索、排序、右键卸载。"""
 
+    # 卸载向导最多等 15 分钟；超时就放弃等待，让用户自己点重新扫描
+    UNINSTALL_WAIT_SEC = 900
+
     # 表头列 -> 排序下拉框的索引
     SORT_BY_COLUMN = {0: 0, 3: 1, 4: 2}
 
@@ -159,6 +164,9 @@ class InstalledView(QWidget):
         self.store = store
         self.tasks = tasks
         self._apps: list[appmgr.InstalledApp] = []
+        # 等卸载向导退出用后台线程 + 主线程轮询，不用 QThread 信号：
+        # 换肤重建页面时回调落地到已销毁对象，是这个项目踩过两次的坑
+        self._uninstall_bg = BackgroundCall(self)
 
         self.store.software_changed.connect(self._render_software)
         self.tasks.finished.connect(self._on_task_finished)
@@ -296,6 +304,7 @@ class InstalledView(QWidget):
         self._apply_filter()
 
     def shutdown(self) -> None:
+        self._uninstall_bg.cancel(wait=True)
         self.tasks.cancel_many("software")
 
     def _apply_filter(self) -> None:
@@ -436,6 +445,44 @@ class InstalledView(QWidget):
         ok, err = appmgr.launch_uninstaller(app)
         if not ok:
             QMessageBox.warning(self, "无法启动卸载程序", err)
+            return
+
+        # 以前的 bug：这里启动向导后就不管了，store 里的软件列表没变，
+        # 用户关掉向导回来还看见那个软件，以为卸载失败。现在盯住那个进程，
+        # 它退出即代表卸载流程走完，自动作废缓存并重扫，不需要手动刷新。
+        proc = getattr(app, "uninstall_proc", None)
+        if proc is None:
+            return
+        self.lbl_count.setText("等待卸载向导结束…")
+        started = self._uninstall_bg.start(
+            lambda: self._wait_uninstall(proc),
+            self._on_uninstall_finished,
+            timeout_ms=(self.UNINSTALL_WAIT_SEC + 10) * 1000,
+        )
+        if not started:
+            # 同时卸两个的情况极少，但不能静默丢掉刷新
+            self.lbl_count.setText("上一个卸载仍在等待，结束后请点「重新扫描」")
+
+    @classmethod
+    def _wait_uninstall(cls, proc, limit: int | None = None) -> bool:
+        """后台线程：等卸载向导退出。返回 False 表示超时/无法等待。"""
+        try:
+            proc.wait(timeout=limit or cls.UNINSTALL_WAIT_SEC)
+        except Exception:  # TimeoutExpired / OSError 都不该把界面带崩
+            return False
+        # 少数卸载器先退出、再由子进程收尾，留 1 秒给它写注册表
+        time.sleep(1.0)
+        return True
+
+    def _on_uninstall_finished(self, done: bool, error: str) -> None:
+        if error or not done:
+            self.lbl_count.setText("卸载向导仍在运行，结束后可点「重新扫描」")
+            return
+        appmgr.invalidate_cache()
+        self.lbl_count.setText("卸载结束，正在刷新…")
+        self.tasks.submit(
+            "software", "卸载后刷新软件列表", self._make_task(force=True)
+        )
 
     def _open_dir(self, app: appmgr.InstalledApp) -> None:
         ok, err = appmgr.open_install_dir(app)

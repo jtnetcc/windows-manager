@@ -1709,6 +1709,8 @@ class MainWindow(QMainWindow):
                 applog.silenced("main_window._stop_page_workers")
 
     def _shutdown(self) -> None:
+        # 更新检查的后台线程也要收掉（见 ui/bg.py cancel(wait=True)）
+        self._bg.cancel(wait=True)
         # 先停停顿监视：它是 daemon 线程，退出时若正卡在 dump 调用栈，
         # 会和解释器收尾撞上（现场表现为退出瞬间 access violation）
         stall = getattr(self, "stall_watch", None)

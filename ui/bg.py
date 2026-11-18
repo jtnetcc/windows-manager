@@ -69,11 +69,19 @@ class BackgroundCall(QObject):
         self._timer.start()
         return True
 
-    def cancel(self) -> None:
-        """放弃等待。线程本身无法打断，但结果会被丢掉。"""
+    def cancel(self, wait: bool = False) -> None:
+        """放弃等待。线程本身无法打断，但结果会被丢掉。
+
+        `wait=True` 给退出/换肤路径用：线程还在写 `_done` 时就把 QObject
+        析构掉，PySide 在解释器收尾阶段偶发 abort。默认不 join，
+        免得超时路径（DNS 卡住）把界面线程也拖住。
+        """
+        thread = self._thread
         self._timer.stop()
         self._thread = None
         self._on_done = None
+        if wait and thread is not None and thread.is_alive():
+            thread.join(timeout=2.0)
 
     def _poll(self) -> None:
         if not self._done:

@@ -21,7 +21,7 @@ import subprocess
 import time
 import winreg
 from ctypes import wintypes
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 
 from . import winpath
@@ -124,6 +124,9 @@ class InstalledApp:
     install_date: str = ""
     source: str = ""
     system: bool = False          # SystemComponent=1：属于别的程序的运行时/依赖
+    # 启动的卸载向导进程。界面靠它判断「卸载真正结束」再自动刷新列表；
+    # 不参与比较/序列化，免得影响扫描结果去重与缓存。
+    uninstall_proc: object | None = field(default=None, repr=False, compare=False)
 
     @property
     def size_mb(self) -> float:
@@ -606,7 +609,7 @@ def launch_uninstaller(app: InstalledApp) -> tuple[bool, str]:
         command = f'"{command}"'
 
     try:
-        subprocess.Popen(command, shell=False, close_fds=True)
+        app.uninstall_proc = subprocess.Popen(command, shell=False, close_fds=True)
         invalidate_cache()
         return True, ""
     except OSError:
@@ -614,7 +617,7 @@ def launch_uninstaller(app: InstalledApp) -> tuple[bool, str]:
 
     # 退路：带 shell 语法的命令串走 cmd，但窗口不显示
     try:
-        subprocess.Popen(
+        app.uninstall_proc = subprocess.Popen(
             command,
             shell=True,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
