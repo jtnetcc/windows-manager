@@ -558,6 +558,7 @@ class CleanPage(QWidget):
                 "确认清理",
                 f"将删除 {len(self._items)} 个文件，共 {fmt_bytes(total)}。\n\n"
                 "这些都是可再生的临时文件与缓存，删除后程序会自动重建。\n"
+                "注意：直接删除，不进回收站，无法还原。\n"
                 "系统目录、程序目录和文档目录不会被动到。",
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.No,

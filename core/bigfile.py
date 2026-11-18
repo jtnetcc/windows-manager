@@ -253,6 +253,11 @@ def scan_ex(
             dirnames[:] = [d for d in dirnames if d.lower() not in SKIP_DIR_NAMES]
             for name in filenames:
                 seen += 1
+                # 进度必须在这里报，不能等到「命中」之后再报：
+                # 选类型扫描时绝大多数文件会被扩展名筛掉，走不到后面那行，
+                # 状态栏就会一直停在「正在扫描图片…」不动，看着像卡死。
+                if seen % PROGRESS_EVERY == 0 and on_progress:
+                    on_progress(seen, len(found))
                 ext = os.path.splitext(name)[1].lstrip(".").lower()
                 if installer_only and ext == "exe":
                     if not _looks_installer(name):
@@ -274,8 +279,6 @@ def scan_ex(
                     cloud += 1
                     continue
                 found.append(BigFile(full, stat.st_size, stat.st_mtime))
-                if seen % PROGRESS_EVERY == 0 and on_progress:
-                    on_progress(seen, len(found))
 
     if on_progress:
         on_progress(seen, len(found))

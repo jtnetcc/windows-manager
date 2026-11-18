@@ -98,6 +98,23 @@ def main() -> int:
     for folder in roots:
         shutil.rmtree(folder, ignore_errors=True)
 
+    # 5. 类型扫描时进度要「动」：扩展名筛掉的文件也必须计入进度
+    folder = Path(tempfile.mkdtemp(prefix="wmp_"))
+    try:
+        for i in range(1200):
+            (folder / f"f{i}.txt").write_bytes(b"x")
+        (folder / "pic.jpg").write_bytes(b"0" * (2 * 1024 * 1024))
+        progress: list[int] = []
+        bf.scan_ex(
+            [str(folder)], 1 * 1024 * 1024, kinds=["image"],
+            on_progress=lambda seen, hit: progress.append(seen),
+        )
+        middle = [s for s in progress if 0 < s < 1201]
+        assert middle, f"类型扫描全程没有中间进度：{progress[:5]}"
+        print(f"类型扫描进度：中间上报 {len(middle)} 次（{middle[:3]}…）✓")
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+
     window._shutdown()
     app.quit()
     print("全部通过")

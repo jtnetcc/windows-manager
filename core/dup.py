@@ -15,6 +15,12 @@ import hashlib
 import os
 from dataclasses import dataclass, field
 
+# 目录联接（junction）、符号链接在 Windows 上都带这个属性。
+# `os.walk(followlinks=False)` 只挡符号链接，挡不住 junction ——
+# C://Users//All Users、C://Documents and Settings 就是 junction，
+# 走进去会让同一个文件以两条路径出现。
+FILE_ATTRIBUTE_REPARSE_POINT = 0x400
+
 HEAD_BYTES = 4096
 CHUNK = 1024 * 1024
 PROGRESS_EVERY = 400
@@ -63,11 +69,27 @@ def _should_skip_dir(name: str) -> bool:
     return name.lower() in SKIP_DIR_NAMES
 
 
+def _is_reparse(stat_result) -> bool:
+    """是否链接/联接点。取不到属性时按「不是」处理，别把整次扫描拖垮。"""
+    return bool(getattr(stat_result, "st_file_attributes", 0) & FILE_ATTRIBUTE_REPARSE_POINT)
+
+
+def _is_link_dir(path: str) -> bool:
+    try:
+        return _is_reparse(os.stat(path, follow_symlinks=False))
+    except OSError:
+        # 读不到属性的目录直接不进去：多数是权限不足或已失效的链接
+        return True
+
+
 def _walk(roots: list[str], min_size: int, should_stop, on_progress):
     """第一段：按体积分组。"""
     by_size: dict[int, list[str]] = {}
     seen = 0
     total_bytes = 0
+    # 硬链接：多个路径指向同一个 inode。只留第一次遇到的那条路径 ——
+    # 否则同一份物理文件会被当成「两份重复」，删掉其中一条路径也不释放空间。
+    seen_inodes: set[tuple[int, int]] = set()
 
     for root in roots:
         if should_stop():
@@ -77,26 +99,38 @@ def _walk(roots: list[str], min_size: int, should_stop, on_progress):
         for dirpath, dirnames, filenames in os.walk(root, onerror=lambda _e: None):
             if should_stop():
                 return by_size
-            dirnames[:] = [d for d in dirnames if not _should_skip_dir(d)]
+            # 目录层面的过滤：名字命中黑名单，或者是个链接/联接点
+            dirnames[:] = [
+                d for d in dirnames
+                if not _should_skip_dir(d) and not _is_link_dir(os.path.join(dirpath, d))
+            ]
             for name in filenames:
                 if should_stop():
                     return by_size
                 full = os.path.join(dirpath, name)
                 try:
-                    stat = os.stat(full)
+                    # follow_symlinks=False：拿到链接本身的属性，才能认出它是不是链接
+                    stat = os.stat(full, follow_symlinks=False)
                 except OSError:
                     continue
                 # seen 统计的是「走过了多少个文件」，不是候选数 ——
                 # 否则界面上会显示「已扫描 30 个文件」其实已经走完几万个
                 seen += 1
+                if _is_reparse(stat):
+                    # 符号链接 / 联接点：内容属于目标，列进来就是重复计数
+                    if seen % PROGRESS_EVERY == 0 and on_progress:
+                        on_progress(seen, total_bytes, 0)
+                    continue
                 total_bytes += stat.st_size
                 if stat.st_size < min_size:
                     if seen % PROGRESS_EVERY == 0 and on_progress:
                         on_progress(seen, total_bytes, 0)
                     continue
-                # 跳过符号链接 / 联接点，避免同一文件被算两次
-                if getattr(stat, "st_nlink", 1) > 1 and os.path.islink(full):
-                    continue
+                if getattr(stat, "st_nlink", 1) > 1:
+                    ident = (stat.st_dev, stat.st_ino)
+                    if ident in seen_inodes:
+                        continue
+                    seen_inodes.add(ident)
                 by_size.setdefault(stat.st_size, []).append(full)
                 if seen % PROGRESS_EVERY == 0 and on_progress:
                     on_progress(seen, total_bytes, 0)

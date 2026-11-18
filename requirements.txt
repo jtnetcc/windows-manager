@@ -1,2 +1,8 @@
-PySide6-Essentials>=6.6
-psutil>=5.9
+# 运行时依赖（打包时也需要）
+#
+# 上界是刻意的：上游大版本升级经常带 ABI / 打包 hook 变化，
+# 曾出现过「本地能跑、PyInstaller 打出来缺 DLL」的情况。
+# 要升大版本时，先在 requirements-build.txt 里临时放开，跑一遍
+# tools/check_startup.py + tools/build_installer.py --build 再改回来。
+PySide6-Essentials>=6.6,<7
+psutil>=5.9,<8

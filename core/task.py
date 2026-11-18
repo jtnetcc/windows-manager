@@ -154,20 +154,22 @@ class TaskCenter(QObject):
         worker.done.connect(
             lambda result, error, tid=task_id: self._on_done(tid, result, error)
         )
+        # 用 QThread 自己的 finished 信号来回收对象：done 是在 run() 里 emit 的，
+        # 那时线程还没真正退出，在 _on_done 里 deleteLater 有机会踩到
+        # 「QThread: Destroyed while thread is still running」。
+        worker.finished.connect(worker.deleteLater)
         worker.start()
 
         self.started.emit(task_id, label)
         self.queue_changed.emit()
 
     def _on_done(self, task_id: str, result, error: str) -> None:
-        worker = self._worker
         label = self._current_label
+        # 对象不在这里删：worker.finished 已经接了 deleteLater，
+        # 这里只把引用放掉，别让下一轮 _pump 复用同一个对象
         self._worker = None
         self._current_id = ""
         self._current_label = ""
-
-        if worker is not None:
-            worker.deleteLater()
 
         if error:
             # 先报失败原因，再发 cancelled 让页面把按钮和进度文案复位：
