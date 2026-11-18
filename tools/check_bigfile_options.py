@@ -115,6 +115,22 @@ def main() -> int:
     finally:
         shutil.rmtree(folder, ignore_errors=True)
 
+    # 6. Top-N：命中很多时只保留最大的一批，但 matched/truncated 要如实反映总量
+    folder = Path(tempfile.mkdtemp(prefix="wmtop_"))
+    try:
+        for i in range(300):
+            (folder / f"f{i:03d}.bin").write_bytes(b"0" * (i + 1))
+        result = bf.scan_ex([str(folder)], min_size=1, limit=50)
+        assert len(result.files) == 50, f"没有按 limit 截断：{len(result.files)}"
+        assert result.matched == 300, f"matched 不对：{result.matched}"
+        assert result.truncated, "truncated 应为 True"
+        sizes = [f.size for f in result.files]
+        assert sizes == sorted(sizes, reverse=True), "返回结果没有按体积降序"
+        assert min(sizes) == 251, f"截断点不对（应保留最大的 50 个）：{min(sizes)}"
+        print(f"Top-N：300 命中 → 返回 50，最小保留 {min(sizes)} 字节 ✓")
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+
     window._shutdown()
     app.quit()
     print("全部通过")
@@ -122,6 +138,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    code = main()
-    sys.stdout.flush()
-    os._exit(code)
+    # 不要用 os._exit：QThread / Qt 插件还活着时直接 ExitProcess，
+    # Windows 的 DLL 卸载会在随机线程里跑，实测 5 次里崩 3 次。
+    # _shutdown() 已经停掉采样器与任务线程，正常返回即可。
+    sys.exit(main())

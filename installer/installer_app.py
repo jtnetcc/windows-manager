@@ -330,14 +330,21 @@ class SetupWindow(QWidget):
 
 
 def silent_install(argv: list[str]) -> int:
-    """静默安装：/S 或 --silent，可用 /D=<目录> 或 --dir=<目录> 指定位置。"""
+    """静默安装：/S 或 --silent，可用 /D=<目录> 或 --dir=<目录> 指定位置。
+
+    默认会建桌面快捷方式（和图形安装一致）；批量部署不想要就加 /nodesktop。
+    """
     target = default_dir()
+    desktop = True
     for arg in argv:
+        if arg.lower() in ("/nodesktop", "--no-desktop"):
+            desktop = False
+            continue
         for prefix in ("/D=", "--dir="):
             if arg.startswith(prefix):
                 target = Path(arg[len(prefix):])
     try:
-        install(target, True, lambda *_a: None)
+        install(target, desktop, lambda *_a: None)
     except Exception as exc:  # noqa: BLE001
         print(f"安装失败：{exc}", file=sys.stderr)
         return 1

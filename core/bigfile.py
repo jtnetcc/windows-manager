@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import heapq
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -238,7 +239,11 @@ def scan_ex(
         if installer_only:
             allowed.discard("exe")  # exe 要按文件名判，见下面的分支
 
-    found: list[BigFile] = []
+    # 只维护「体积最大的 limit 个」，不再把所有命中项都堆在内存里再排序。
+    # 门槛调到 1 MB + 全盘时命中数可达十几万，全量保存在内存里纯属浪费；
+    # 这里用一个小顶堆，内存恒定 O(limit)。
+    top: list[tuple[int, int, BigFile]] = []
+    matched = 0
     seen = 0
     cloud = 0
 
@@ -257,7 +262,7 @@ def scan_ex(
                 # 选类型扫描时绝大多数文件会被扩展名筛掉，走不到后面那行，
                 # 状态栏就会一直停在「正在扫描图片…」不动，看着像卡死。
                 if seen % PROGRESS_EVERY == 0 and on_progress:
-                    on_progress(seen, len(found))
+                    on_progress(seen, matched)
                 ext = os.path.splitext(name)[1].lstrip(".").lower()
                 if installer_only and ext == "exe":
                     if not _looks_installer(name):
@@ -278,20 +283,24 @@ def scan_ex(
                 if stat.st_file_attributes & _CLOUD_ATTRS:
                     cloud += 1
                     continue
-                found.append(BigFile(full, stat.st_size, stat.st_mtime))
+                matched += 1
+                entry = (stat.st_size, matched, BigFile(full, stat.st_size, stat.st_mtime))
+                if len(top) < limit:
+                    heapq.heappush(top, entry)
+                elif entry[0] > top[0][0]:
+                    heapq.heapreplace(top, entry)
 
     if on_progress:
-        on_progress(seen, len(found))
+        on_progress(seen, matched)
 
-    found.sort(key=lambda f: f.size, reverse=True)
-    top = found[:limit]
-    for item in top:
+    files = [item for _size, _seq, item in sorted(top, key=lambda e: e[0], reverse=True)]
+    for item in files:
         item.locked = is_system_file(item.path)
     return ScanResult(
-        files=top,
+        files=files,
         seen=seen,
-        matched=len(found),
-        truncated=len(found) > limit,
+        matched=matched,
+        truncated=matched > limit,
         cloud_skipped=cloud,
     )
 

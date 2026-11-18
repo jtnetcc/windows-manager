@@ -188,7 +188,7 @@ class InstalledView(QWidget):
 
         self.btn_refresh = QPushButton("重新扫描")
         self.btn_refresh.setObjectName("Ghost")
-        self.btn_refresh.clicked.connect(self.refresh)
+        self.btn_refresh.clicked.connect(lambda _checked=False: self.refresh(force=True))
         toolbar.addWidget(self.btn_refresh)
 
         toolbar.addStretch(1)
@@ -240,8 +240,11 @@ class InstalledView(QWidget):
 
     # ---------------------------------------------------------- 数据
 
-    def refresh(self) -> None:
-        """枚举注册表比较慢，交给任务中心，别卡住界面。"""
+    def refresh(self, force: bool = False) -> None:
+        """枚举注册表比较慢，交给任务中心，别卡住界面。
+
+        `force=True` 跳过 60 秒缓存（用户主动点了「重新扫描」）。
+        """
         # 原来这里直接 return，按钮看着能点却毫无反应，
         # 体检或清理在跑时（任务中心一次只跑一个）最容易被当成「重新扫描坏了」
         if self.tasks.is_busy("software"):
@@ -254,18 +257,19 @@ class InstalledView(QWidget):
             self.lbl_count.setText("正在读取…")
         self.btn_refresh.setEnabled(False)
         self.btn_refresh.setText("排队中…" if waiting else "扫描中…")
-        if not self.tasks.submit("software", "读取已安装软件", self._make_task()):
+        if not self.tasks.submit("software", "读取已安装软件", self._make_task(force)):
             self.btn_refresh.setEnabled(True)
             self.btn_refresh.setText("重新扫描")
             self.lbl_count.setText("无法启动扫描，请稍后再试")
 
-    def _make_task(self):
+    def _make_task(self, force: bool = False):
         def run(report, should_stop):
             report(15, "正在枚举注册表…")
             # 注册表只覆盖「正规安装」的软件；网游客户端、绿色版、自家启动器
             # 装的程序压根不写 Uninstall 键，得再扫一遍安装目录才补得全。
             apps = appmgr.list_installed(
-                report=lambda pct, text: report(pct, text) if not should_stop() else None
+                report=lambda pct, text: report(pct, text) if not should_stop() else None,
+                refresh=force,
             )
             if should_stop():
                 return None

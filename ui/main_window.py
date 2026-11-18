@@ -1864,6 +1864,11 @@ class MainWindow(QMainWindow):
                 applog.silenced("main_window._stop_page_workers")
 
     def _shutdown(self) -> None:
+        # 先停停顿监视：它是 daemon 线程，退出时若正卡在 dump 调用栈，
+        # 会和解释器收尾撞上（现场表现为退出瞬间 access violation）
+        stall = getattr(self, "stall_watch", None)
+        if stall is not None:
+            stall.stop()
         # 先摘掉全局事件过滤器：它挂在 QApplication 上，比窗口活得久，
         # 退出时 Qt 还在往半销毁的控件发事件，就会在 atexit 里刷一串
         # 「Internal C++ object already deleted」

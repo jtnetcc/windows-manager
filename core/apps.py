@@ -450,11 +450,35 @@ def _folder_apps(deadline: float) -> list[InstalledApp]:
     return result
 
 
-def list_installed(with_folders: bool = True, report=None) -> list[InstalledApp]:
+# 软件列表缓存：一次扫描本机实测 2.1 秒（115 个软件），而「软件管理」页
+# 每次进入、卸载残留页兜底、体检都会各调一次 —— 不加缓存等于反复扫注册表。
+# 60 秒足够覆盖「切页 / 换肤重建」这类重复调用，又不会让新装的软件迟迟不出现。
+CACHE_TTL = 60.0
+_installed_cache: dict[bool, tuple[float, list[InstalledApp]]] = {}
+
+
+def invalidate_cache() -> None:
+    """让软件列表缓存失效。卸载成功后调用，下次进页面会重新扫描。"""
+    _installed_cache.clear()
+
+
+def list_installed(
+    with_folders: bool = True, report=None, refresh: bool = False
+) -> list[InstalledApp]:
     """扫描注册表与安装目录，返回去重后的已安装程序列表。
 
     `report(percent, text)` 可选，给任务中心报进度。
+    `refresh=True` 跳过缓存（用户点「重新扫描」时用）。
+
+    返回值是缓存列表的浅拷贝：调用方排序/删元素不会污染缓存。
     """
+    if not refresh:
+        hit = _installed_cache.get(with_folders)
+        if hit is not None and time.monotonic() - hit[0] < CACHE_TTL:
+            if report:
+                report(100, "已读取缓存")
+            return list(hit[1])
+
     found: dict[str, InstalledApp] = {}
     by_path: dict[str, str] = {}
     by_name: dict[str, str] = {}
@@ -554,7 +578,9 @@ def list_installed(with_folders: bool = True, report=None) -> list[InstalledApp]
         if report:
             report(90, "正在整理结果…")
 
-    return sorted(found.values(), key=lambda a: a.name.lower())
+    result = sorted(found.values(), key=lambda a: a.name.lower())
+    _installed_cache[with_folders] = (time.monotonic(), result)
+    return list(result)
 
 
 def launch_uninstaller(app: InstalledApp) -> tuple[bool, str]:
@@ -581,6 +607,7 @@ def launch_uninstaller(app: InstalledApp) -> tuple[bool, str]:
 
     try:
         subprocess.Popen(command, shell=False, close_fds=True)
+        invalidate_cache()
         return True, ""
     except OSError:
         applog.failed("apps.launch_uninstaller.direct")
