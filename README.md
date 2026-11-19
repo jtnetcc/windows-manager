@@ -10,12 +10,12 @@ Windows 桌面系统管理工具。PySide6 写的单文件 exe，**纯本地、�
 |---|---|
 | 全面体检 | 11 项加权评分（权重 100），每项可一键跳到对应页处理 |
 | 性能监控 | CPU / 内存 / 磁盘 / 网络 / 进程六段，趋势图支持悬停读数 |
-| 清理中心 | 四段：常规清理（16 条规则）/ 按软件（微信、QQ、浏览器）/ 重复文件 / 回收站 |
+| 清理中心 | 四段：常规清理（17 条规则）/ 按软件（微信、QQ、浏览器）/ 重复文件 / 回收站 |
 | 重复文件 | 三段式哈希，删除进回收站可还原 |
 | 空间分析 | 目录占用 + 可回收项 + 历史快照；大文件**默认扫所有本地磁盘**，可按盘/目录与类型筛，勾选删除到回收站 |
 | 开机启动 | 注册表 / 启动文件夹 / 计划任务三处来源一个表，按来源分段，计划任务显示下次运行时间 |
 | 系统瘦身 | 9 个系统开关 + 4 项空间回收，每项写明影响，可逐项还原 |
-| 软件管理 | 已安装程序（可卸载 / 打开目录）+ 卸载残留（只列不勾选）+ 注册表残留（强制备份后才允许删除） |
+| 软件管理 | 已安装程序（卸载向导退出后自动刷新列表）+ 卸载残留（只列不勾选）+ 注册表残留（强制备份后才允许删除） |
 | 系统信息 | SMBIOS 直读，含激活状态、硬件序列号、磁盘健康与通电时间 |
 | 一键优化 | 扫垃圾 → 清理 → 整理内存 → 出建议 |
 
@@ -31,6 +31,8 @@ UI 层   ui/page_*.py        订阅 store 信号 → 派任务 → 渲染
 状态层  core/store.py       单一数据源，apply() 是唯一写入口
 编排层  core/task.py        串行任务中心（进度 / 取消 / 失败兜底）
 能力层  core/*.py           cleaner / dup / registry / recycle / health / leftover …
+公共层  core/syscmd.py      子进程统一封装（隐藏窗口 / 超时 / 解码）
+        core/spacemeasure.py  空间项唯一测量源（slim 与 spacereport 共用）
 ```
 
 一条数据的完整路径：
@@ -61,8 +63,8 @@ python main.py
 自检（不真删文件，验证数据往返与界面交互）：
 
 ```bash
-python tools/check_all.py         # 16 个自检脚本一键跑（约 2 分钟）
-python tools/check_all.py --headless   # CI 用，跳过会真装卸/依赖托盘的 3 条
+python tools/check_all.py         # 21 个自检脚本一键跑（约 2 分钟）
+python tools/check_all.py --headless   # CI 用，17 个；跳过会真装卸/依赖托盘的 3 条
 python -m compileall -q core ui main.py
 ```
 
@@ -108,11 +110,11 @@ python tools/releases.py --to 0.0.37  # 回滚到该版本
 
 ## 文档
 
-- [`docs/交接文档.md`](docs/交接文档.md) —— 架构、设计决策、踩过的坑（**改动前先读**，2400 行）
+- [`docs/交接文档.md`](docs/交接文档.md) —— 架构、设计决策、踩过的坑（**改动前先读**，2500 行）
 - [`docs/打包说明.md`](docs/打包说明.md) —— Windows 便携版/安装包、签名与 CI
 - [`docs/待接入排查与下步方案.md`](docs/待接入排查与下步方案.md) —— 未完成项与优先级
-- [`docs/整改方案.md`](docs/整改方案.md) —— 重构路线图
-- [`docs/GrClean调研与整合方案.md`](docs/GrClean调研与整合方案.md) / [`docs/C盘扫描加强方案.md`](docs/C盘扫描加强方案.md) —— 专项调研
+- [`docs/整改方案.md`](docs/整改方案.md) —— 2026-11-08 的重构路线图（**历史快照**，顶部有现状校准）
+- [`docs/GrClean调研与整合方案.md`](docs/GrClean调研与整合方案.md) / [`docs/C盘扫描加强方案.md`](docs/C盘扫描加强方案.md) —— 专项调研（历史方案，顶部有现状校准）
 
 ## 推送代码
 
@@ -134,4 +136,4 @@ python tools/push_github.py --repo jtnetcc/windows-manager -m "feat: xxx"
 
 ## 当前版本
 
-v0.0.52 · 内测（版本号唯一来源：`core/version.py`）
+v0.0.62 · 内测（版本号唯一来源：`core/version.py`）
