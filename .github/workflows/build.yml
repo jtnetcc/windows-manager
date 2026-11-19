@@ -125,8 +125,23 @@ jobs:
           gh auth status 2>&1 | sed 's/^/  /' || true
           python tools/release_notes.py --out release_notes.md
 
-          # 同名 Release 已存在时先删（重跑幂等）；不删 tag，由 create 复用
-          gh release delete "$GITHUB_REF_NAME" --yes --cleanup-tag=false 2>/dev/null || true
+          # 同名 Release 已存在时先删，并且**验证删掉了**再创建。
+          # v0.0.64 就是只写了 `|| true`：删除失败被吞掉，create 复用了旧
+          # Release 里的旧资产（名字还是被截断的中文名），步骤却报成功。
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release delete "$GITHUB_REF_NAME" --yes --cleanup-tag=false \
+              || fail "旧 Release 删除失败，停止（避免复用旧资产）"
+            if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+              fail "旧 Release 仍存在，停止"
+            fi
+          fi
+
+          # 一次性清理：v0.0.64 的 Release 是坏资产（名字截断、校验清单对不上），
+          # 只允许在 v0.0.65 这轮删掉它；后续版本不受影响
+          if [ "$ver" = "0.0.65" ] && gh release view v0.0.64 >/dev/null 2>&1; then
+            gh release delete v0.0.64 --yes --cleanup-tag=false \
+              || echo "::warning::v0.0.64 的坏 Release 删除失败，需手动处理"
+          fi
 
           if ! gh release create "$GITHUB_REF_NAME" \
             "dist/WindowsManager-v${ver}.exe#便携版（单文件）" \
