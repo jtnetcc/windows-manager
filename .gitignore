@@ -35,3 +35,6 @@ shot_*.png
 # 本地配置（含机器相关的设置）
 config.json
 settings.json
+
+# 临时下载 / 构建中间物
+.tmp_*/

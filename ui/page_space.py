@@ -23,6 +23,7 @@ from PySide6.QtCore import QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath
 from PySide6.QtWidgets import (
     QHBoxLayout,
+    QLabel,
     QMenu,
     QMessageBox,
     QPushButton,
