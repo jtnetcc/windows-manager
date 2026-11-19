@@ -54,13 +54,19 @@ def main() -> int:
         assert len(list(tmp.iterdir())) == before, "dry-run 删了文件"
         print("dry-run ✓（只列不删）")
 
-        # 真实归档：只打印清单，确认不会误伤最近版本
-        real = releases.plan_prune(keep=10)
-        protected = {f"v{v}" for v in releases.tagged_versions()}
-        assert all(p.name not in protected for p in real)
-        newest = sorted((p for p in releases.RELEASES.iterdir() if p.is_dir()), key=releases._version_key)[-10:]
-        assert all(p not in real for p in newest), "最近 10 个版本里有人被列入删除"
-        print(f"真实归档 ✓（可删 {len(real)} 个，最近 10 个与 tag 均受保护）")
+        # 真实归档：CI / 首次克隆没有 releases/，跳过而不是崩
+        if not releases.RELEASES.exists():
+            print("真实归档 ✓（无本地归档，CI 环境跳过）")
+        else:
+            real = releases.plan_prune(keep=10)
+            protected = {f"v{v}" for v in releases.tagged_versions()}
+            assert all(p.name not in protected for p in real)
+            newest = sorted(
+                (p for p in releases.RELEASES.iterdir() if p.is_dir()),
+                key=releases._version_key,
+            )[-10:]
+            assert all(p not in real for p in newest), "最近 10 个版本里有人被列入删除"
+            print(f"真实归档 ✓（可删 {len(real)} 个，最近 10 个与 tag 均受保护）")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     print("全部通过")
