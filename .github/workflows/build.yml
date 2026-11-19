@@ -98,12 +98,15 @@ jobs:
         shell: bash
         run: |
           ver="${GITHUB_REF_NAME#v}"
-          # 便携版原始名不带版本号，Release 里要可区分，先复制一份再算哈希
+          # Release 资产用纯 ASCII 名：Git Bash 把 UTF-8 中文名传给 gh 时会被
+          # 按 ANSI 解释，实测 v0.0.64 第一版 assets 变成 "Windows.-v0.0.64.exe"。
+          # 中文说明放到的 label 里，文件名保持可下载。
           if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ -f "dist/Windows系统管家.exe" ]; then
-            cp "dist/Windows系统管家.exe" "dist/Windows系统管家-v${ver}.exe"
+            cp "dist/Windows系统管家.exe" "dist/WindowsManager-v${ver}.exe"
+            cp "dist/Windows系统管家-v${ver}-setup.exe" "dist/WindowsManager-v${ver}-setup.exe"
           fi
           cd dist
-          sha256sum Windows系统管家*.exe > SHA256SUMS.txt
+          sha256sum WindowsManager-v*.exe > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
       - name: 发布 Release（草稿 → 校验 → 公开）
@@ -122,9 +125,12 @@ jobs:
           gh auth status 2>&1 | sed 's/^/  /' || true
           python tools/release_notes.py --out release_notes.md
 
+          # 同名 Release 已存在时先删（重跑幂等）；不删 tag，由 create 复用
+          gh release delete "$GITHUB_REF_NAME" --yes --cleanup-tag=false 2>/dev/null || true
+
           if ! gh release create "$GITHUB_REF_NAME" \
-            "dist/Windows系统管家-v${ver}.exe#便携版（单文件）" \
-            "dist/Windows系统管家-v${ver}-setup.exe#安装包" \
+            "dist/WindowsManager-v${ver}.exe#便携版（单文件）" \
+            "dist/WindowsManager-v${ver}-setup.exe#安装包" \
             "dist/SHA256SUMS.txt" \
             --draft --prerelease \
             --title "Windows系统管家 v${ver}（内测）" \
@@ -147,6 +153,5 @@ jobs:
           name: windows-installer
           path: |
             dist/Windows系统管家.exe
-            dist/Windows系统管家-v*.exe
-            dist/Windows系统管家-v*-setup.exe
+            dist/WindowsManager-v*.exe
             dist/SHA256SUMS.txt
