@@ -115,6 +115,8 @@ jobs:
           # 不用 set -e：gh 的报错要抓下来转成注解，否则无 token 时看不到日志
           set -uo pipefail
           fail() { echo "::error::$1"; exit 1; }
+          # 任何一行非零退出都带行号与命令写进注解（无 token 时唯一可见的诊断）
+          trap 'echo "::error::[release] 第 $LINENO 行失败：$BASH_COMMAND"' ERR
           ver="${GITHUB_REF_NAME#v}"
           echo "gh: $(gh --version | head -1)"
           gh auth status 2>&1 | sed 's/^/  /' || true
@@ -135,7 +137,7 @@ jobs:
 
           # 公开前自检：资产数量、非空、草稿状态
           gh release view "$GITHUB_REF_NAME" --json isDraft,assets > release_check.json
-          python tools/check_release_assets.py release_check.json
+          python tools/verify_release_assets.py release_check.json
 
           gh release edit "$GITHUB_REF_NAME" --draft=false
           echo "已公开：$GITHUB_REF_NAME"
