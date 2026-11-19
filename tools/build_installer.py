@@ -27,6 +27,7 @@ import json
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -178,6 +179,55 @@ def verify(path: Path) -> None:
     print(f"  自检通过：{size / 1048576:.1f} MB")
 
 
+# 判「产物是否陈旧」要看这些源码/资源，不看 docs / tools
+SOURCE_GLOBS = ("core/*.py", "ui/*.py", "installer/*.py", "assets/*")
+SOURCE_FILES = ("main.py",)
+
+
+def newest_source_mtime() -> float:
+    """源码与资源里最新的修改时间。"""
+    newest = 0.0
+    for pattern in SOURCE_GLOBS:
+        for path in ROOT.glob(pattern):
+            if path.is_file():
+                newest = max(newest, path.stat().st_mtime)
+    for name in SOURCE_FILES:
+        path = ROOT / name
+        if path.exists():
+            newest = max(newest, path.stat().st_mtime)
+    return newest
+
+
+def choose_newest(paths: list[Path]) -> Path:
+    """dist 与 dist_pending 里取 mtime 更新的那个。
+
+    build.py 在 dist exe 被占用时会把新产物写到 dist_pending，而 dist 里
+    旧的 exe 仍然存在 —— 只判断「dist 存在」就是 v0.0.62 那次事故的根源。
+    """
+    return max(paths, key=lambda path: path.stat().st_mtime)
+
+
+def assert_fresh(exe: Path, allow_stale: bool = False) -> None:
+    """产物必须比源码新，否则拒绝打包。
+
+    比 mtime 更简单的判断（比如只看文件存在）已经被证明会出事；这里宁可
+    让发版流程停下，也不再把旧程序装进新安装包。
+    """
+    sources = newest_source_mtime()
+    if exe.stat().st_mtime >= sources:
+        return
+    detail = (
+        f"选中的便携版比源码旧：{exe}\n"
+        f"  exe 修改时间：{time.strftime('%m-%d %H:%M', time.localtime(exe.stat().st_mtime))}\n"
+        f"  源码最新时间：{time.strftime('%m-%d %H:%M', time.localtime(sources))}\n"
+        "关掉正在运行的程序后重跑 `--build`；确认无误可加 --allow-stale 跳过"
+    )
+    if allow_stale:
+        print(f"警告：{detail}")
+        return
+    raise SystemExit(detail)
+
+
 def main() -> int:
     args = sys.argv[1:]
     app_exe = DIST / f"{NAME}.exe"
@@ -196,10 +246,11 @@ def main() -> int:
         ]
         if not candidates:
             raise SystemExit("找不到打包好的 exe")
-        app_exe = max(candidates, key=lambda path: path.stat().st_mtime)
+        app_exe = choose_newest(candidates)
         if app_exe.parent.name == "dist_pending":
             print("注意：dist 里的 exe 被占用未更新，本次使用 dist_pending 的新产物")
 
+    assert_fresh(app_exe, allow_stale="--allow-stale" in args)
     print(f"便携版：{app_exe}（{app_exe.stat().st_size / 1048576:.1f} MB）")
     print(f"版本：v{version.VERSION}")
 

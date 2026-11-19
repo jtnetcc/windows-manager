@@ -14,13 +14,17 @@ CRC，解压时就报错；SHA256SUMS.txt 则让「手里这份是不是完整�
 
     python tools/releases.py              列出所有版本
     python tools/releases.py --to 0.0.1   回滚到 v0.0.1
+    python tools/releases.py --prune --keep 10          只打印删除清单（默认）
+    python tools/releases.py --prune --keep 10 --yes    真删
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shutil
+import subprocess
 import sys
 import zipfile
 from datetime import datetime
@@ -220,8 +224,85 @@ def _prune_safety(keep: int = 3) -> None:
         shutil.rmtree(old, ignore_errors=True)
 
 
+VERSION_DIR = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
+
+
+def _version_key(path: Path) -> tuple[int, int, int]:
+    match = VERSION_DIR.match(path.name)
+    return tuple(int(part) for part in match.groups()) if match else (0, 0, 0)
+
+
+def tagged_versions() -> set[str]:
+    """git 里打过 tag 的版本号（不带 v）。没有 git 时返回空集。"""
+    try:
+        done = subprocess.run(
+            ["git", "tag"], cwd=str(ROOT), capture_output=True, text=True, timeout=5
+        )
+    except (OSError, subprocess.SubprocessError):
+        return set()
+    return {
+        line.strip().lstrip("v")
+        for line in done.stdout.splitlines()
+        if line.strip().startswith("v")
+    }
+
+
+def plan_prune(
+    keep: int = 10,
+    root: Path | None = None,
+    protect: set[str] | None = None,
+) -> list[Path]:
+    """列出可删的归档目录。
+
+    保护规则（任何一条命中就不删）：
+    1. 按版本号排序后最近的 max(3, keep) 个；
+    2. 打过 git tag 的版本 —— 那些是对外发布过的回滚点；
+    3. 名字不符合 vX.Y.Z 的目录（可能是 `_rollback_*` 备份）。
+    """
+    root = root or RELEASES
+    if not root.exists():
+        return []
+    folders = [p for p in root.iterdir() if p.is_dir() and VERSION_DIR.match(p.name)]
+    folders.sort(key=_version_key, reverse=True)
+
+    keep_names = {p.name for p in folders[: max(3, keep)]}
+    guard = {f"v{version}" for version in tagged_versions()} if protect is None else protect
+    return [p for p in folders if p.name not in keep_names and p.name not in guard]
+
+
+def prune(keep: int = 10, apply: bool = False) -> list[Path]:
+    """按 plan_prune 的结果删除（apply=False 只返回清单）。"""
+    victims = plan_prune(keep=keep)
+    if apply:
+        for path in victims:
+            shutil.rmtree(path, ignore_errors=True)
+    return victims
+
+
 def main() -> int:
     args = sys.argv[1:]
+    if "--prune" in args:
+        keep = 10
+        if "--keep" in args:
+            index = args.index("--keep")
+            if index + 1 >= len(args):
+                print("用法：python tools/releases.py --prune --keep 10 [--yes]")
+                return 1
+            keep = int(args[index + 1])
+        apply = "--yes" in args
+        victims = prune(keep=keep, apply=apply)
+        if not victims:
+            print(f"没有可删的归档（保留最近 {max(3, keep)} 个 + 已打 tag 的版本）")
+            return 0
+        total = sum(
+            sum(f.stat().st_size for f in path.rglob("*") if f.is_file()) for path in victims
+        )
+        action = "已删除" if apply else "将删除（加 --yes 执行）"
+        print(f"{action} {len(victims)} 个版本，约 {total / 1024 ** 3:.1f} GB：")
+        for path in victims:
+            print(f"  {path.name}")
+        return 0
+
     if "--to" in args:
         index = args.index("--to")
         if index + 1 >= len(args):

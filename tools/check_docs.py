@@ -57,7 +57,16 @@ def main() -> int:
                     raise AssertionError(f"{path.name} 仍在正面引用已删文件：{line[:90]}")
     print("已删文件引用 ✓（仅在删除/历史语境）")
 
-    # 5. 推送方式仍是 SOCKS5
+    # 5. README / 文档里引用的预览图必须存在
+    import re as _re
+
+    for doc in (README, HANDOVER):
+        for match in _re.finditer(r"\]\((docs/preview/[^)]+\.png)\)", doc.read_text(encoding="utf-8")):
+            target = ROOT / match.group(1)
+            assert target.exists(), f"{doc.name} 引用了不存在的截图：{match.group(1)}"
+    print("预览图引用 ✓")
+
+    # 6. 推送方式仍是 SOCKS5
     assert "socks5h://127.0.0.1:10808" in readme
     print("推送说明 ✓")
     print("全部通过")

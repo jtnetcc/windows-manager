@@ -22,7 +22,7 @@ Windows 桌面系统管理工具。PySide6 写的单文件 exe，**纯本地、�
 界面：10 项导航，切角面板 + 冷调深色 + 品牌青 `#2DD4BF`，侧栏可收起成图标轨道。
 另有可切换的「留白」皮肤（大圆角 + 淡青底），设置 → 外观里一键切回经典。
 
-![概览](docs/preview/preview_v038_overview_dark.png)
+![概览](docs/preview/preview_v065_health.png)
 
 ## 架构
 
@@ -63,8 +63,8 @@ python main.py
 自检（不真删文件，验证数据往返与界面交互）：
 
 ```bash
-python tools/check_all.py         # 22 个自检脚本一键跑（约 2 分钟）
-python tools/check_all.py --headless   # CI 用，18 个；跳过会真装卸/依赖托盘的 3 条
+python tools/check_all.py         # 24 个自检脚本一键跑（约 2 分钟）
+python tools/check_all.py --headless   # CI 用，20 个；跳过会真装卸/依赖托盘的 3 条
 python -m compileall -q core ui main.py
 ```
 
