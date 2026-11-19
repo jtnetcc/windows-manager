@@ -36,7 +36,23 @@ jobs:
       - name: 自检（无桌面环境可跑的部分）
         env:
           QT_QPA_PLATFORM: offscreen
-        run: python tools/check_all.py --headless
+        shell: bash
+        run: |
+          set -o pipefail
+          python tools/check_all.py --headless 2>&1 | tee check_all.log || {
+            # 没有 token 时下载不到日志，把失败脚本名写成注解（公开仓库可匿名读取）
+            detail=$(grep -A 8 '失败项' check_all.log | tr '\n' ' ' | cut -c1-600)
+            echo "::error title=check_all 失败::${detail}"
+            exit 1
+          }
+
+      - name: 上传自检日志（失败时）
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: check-all-log
+          path: check_all.log
+          if-no-files-found: ignore
 
       - name: 打包便携版 + 安装包
         run: |
