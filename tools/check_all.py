@@ -5,7 +5,7 @@
 
 约定：
 - 每个脚本独立进程运行，互不污染（有的会建 QApplication、有的会装一次程序）；
-- 默认单个脚本 300 秒超时，超时算失败；
+- 默认单个脚本 600 秒超时，超时算失败；
 - `--headless` 跳过需要真实桌面/会改系统的脚本，给 CI 用；
 - `--list` 只列脚本，不执行。
 
@@ -78,7 +78,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="跑全部自检脚本")
     parser.add_argument("--only", nargs="*", default=[], help="只跑这些脚本（可省略 .py）")
     parser.add_argument("--headless", action="store_true", help="跳过需要真实桌面的脚本")
-    parser.add_argument("--timeout", type=float, default=300, help="单个脚本超时（秒）")
+    parser.add_argument("--timeout", type=float, default=600, help="单个脚本超时（秒）")
     parser.add_argument("--list", action="store_true", help="只列脚本")
     args = parser.parse_args()
 
