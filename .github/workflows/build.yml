@@ -14,6 +14,11 @@ on:
 jobs:
   windows:
     runs-on: windows-2022
+    # runner 默认控制台是 cp1252：任何 print 中文的脚本（自检、打包）都会崩，
+    # 整轮统一 UTF-8，别指望单个步骤里补救
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
     steps:
       - uses: actions/checkout@v4
 

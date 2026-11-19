@@ -27,6 +27,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 TOOLS = ROOT / "tools"
 
+# GitHub runner 的默认控制台是 cp1252，直接 print 中文会 UnicodeEncodeError
+# （2026-11-19 首次跑 CI 就栽在这行上）。父进程和子进程都强制 UTF-8。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 # CI / 无桌面环境不该跑的：真装卸、真关进程、依赖托盘与通知
 HEADLESS_SKIP = {
     "check_uninstall_silent.py",   # 会静默安装再卸载一次
@@ -43,6 +51,8 @@ def run_one(script: Path, timeout: float) -> tuple[bool, str, float]:
     started = time.perf_counter()
     env = dict(os.environ)
     env.setdefault("QT_QPA_PLATFORM", "offscreen")
+    # 子脚本同样在 cp1252 控制台下跑，不指定编码会在自己的 print 上崩
+    env["PYTHONIOENCODING"] = "utf-8"
     try:
         done = subprocess.run(
             [sys.executable, "-u", str(script)],
