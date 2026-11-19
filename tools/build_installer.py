@@ -185,12 +185,20 @@ def main() -> int:
     if "--build" in args or not app_exe.exists():
         print("先打包便携版…")
         run([sys.executable, "tools/build.py"], "打包便携版")
-        app_exe = DIST / f"{NAME}.exe"
-        if not app_exe.exists():
-            # 正在运行时 build.py 会落到 dist_pending
-            app_exe = ROOT / "dist_pending" / f"{NAME}.exe"
-        if not app_exe.exists():
+        # build.py 在 dist 里的 exe 被占用时会改写到 dist_pending，
+        # 而 dist 里那份**仍然存在**（是上一版）。以前这里只看 dist 存不存在，
+        # 结果把旧 exe 塞进了新安装包 —— v0.0.62 就是这么发的：版本号对了，
+        # 里面装的还是 v0.0.61。现在取「两个位置里更新的那个」，并打印来源。
+        candidates = [
+            path
+            for path in (DIST / f"{NAME}.exe", ROOT / "dist_pending" / f"{NAME}.exe")
+            if path.exists()
+        ]
+        if not candidates:
             raise SystemExit("找不到打包好的 exe")
+        app_exe = max(candidates, key=lambda path: path.stat().st_mtime)
+        if app_exe.parent.name == "dist_pending":
+            print("注意：dist 里的 exe 被占用未更新，本次使用 dist_pending 的新产物")
 
     print(f"便携版：{app_exe}（{app_exe.stat().st_size / 1048576:.1f} MB）")
     print(f"版本：v{version.VERSION}")

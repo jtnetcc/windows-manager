@@ -63,8 +63,8 @@ python main.py
 自检（不真删文件，验证数据往返与界面交互）：
 
 ```bash
-python tools/check_all.py         # 21 个自检脚本一键跑（约 2 分钟）
-python tools/check_all.py --headless   # CI 用，17 个；跳过会真装卸/依赖托盘的 3 条
+python tools/check_all.py         # 22 个自检脚本一键跑（约 2 分钟）
+python tools/check_all.py --headless   # CI 用，18 个；跳过会真装卸/依赖托盘的 3 条
 python -m compileall -q core ui main.py
 ```
 
@@ -136,4 +136,4 @@ python tools/push_github.py --repo jtnetcc/windows-manager -m "feat: xxx"
 
 ## 当前版本
 
-v0.0.62 · 内测（版本号唯一来源：`core/version.py`）
+v0.0.63 · 内测（版本号唯一来源：`core/version.py`）
