@@ -2,14 +2,21 @@ name: build
 
 # 只出 Windows 产物（便携版 exe + 安装包）。本项目不发布其它平台版本。
 #
-# 产物在 Actions 的 Artifacts 里下载，不自动发布到分发渠道 ——
-# 发布仍走 tools/sync_oss.py + tools/push_github.py，避免 CI 拿到密钥。
+# 两条产出路径：
+# 1. Artifacts：每轮都传，90 天过期，用于排查；
+# 2. GitHub Release：仅 tag 推送时创建（草稿 → 自检资产 → 公开），
+#    这是「可交付」的正式入口。用内置 GITHUB_TOKEN，不需要额外密钥；
+#    分发渠道（OSS）仍走 tools/sync_oss.py，密钥不进 CI。
 
 on:
   workflow_dispatch:
   push:
     tags:
       - "v*"
+
+# Release 需要写权限；默认的 read 权限会让 gh release create 直接 403
+permissions:
+  contents: write
 
 jobs:
   windows:
@@ -70,14 +77,65 @@ jobs:
           path: check_all.log
           if-no-files-found: ignore
 
+      - name: 版本守卫（tag 名必须等于 core/version.py）
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          ver=$(python -c "import sys; sys.path.insert(0, '.'); from core.version import VERSION; print(VERSION)")
+          if [ "$tag" != "$ver" ]; then
+            echo "::error::tag 是 v$tag，但 core/version.py 是 $ver；发版前必须一致"
+            exit 1
+          fi
+          echo "版本一致：v$ver"
+
       - name: 打包便携版 + 安装包
         run: |
           python tools/build.py
           python tools/build_installer.py
+
+      - name: 生成校验清单
+        shell: bash
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          # 便携版原始名不带版本号，Release 里要可区分，先复制一份再算哈希
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ -f "dist/Windows系统管家.exe" ]; then
+            cp "dist/Windows系统管家.exe" "dist/Windows系统管家-v${ver}.exe"
+          fi
+          cd dist
+          sha256sum Windows系统管家*.exe > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: 发布 Release（草稿 → 校验 → 公开）
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ver="${GITHUB_REF_NAME#v}"
+          python tools/release_notes.py --out release_notes.md
+
+          gh release create "$GITHUB_REF_NAME" \
+            "dist/Windows系统管家-v${ver}.exe#便携版（单文件）" \
+            "dist/Windows系统管家-v${ver}-setup.exe#安装包" \
+            "dist/SHA256SUMS.txt" \
+            --draft --prerelease \
+            --title "Windows系统管家 v${ver}（内测）" \
+            --notes-file release_notes.md
+
+          # 公开前自检：资产数量、非空、草稿状态
+          gh release view "$GITHUB_REF_NAME" --json isDraft,assets > release_check.json
+          python tools/check_release_assets.py release_check.json
+
+          gh release edit "$GITHUB_REF_NAME" --draft=false
+          echo "已公开：$GITHUB_REF_NAME"
 
       - uses: actions/upload-artifact@v4
         with:
           name: windows-installer
           path: |
             dist/Windows系统管家.exe
+            dist/Windows系统管家-v*.exe
             dist/Windows系统管家-v*-setup.exe
+            dist/SHA256SUMS.txt

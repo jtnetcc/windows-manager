@@ -136,4 +136,4 @@ python tools/push_github.py --repo jtnetcc/windows-manager -m "feat: xxx"
 
 ## 当前版本
 
-v0.0.63 · 内测（版本号唯一来源：`core/version.py`）
+v0.0.64 · 内测（版本号唯一来源：`core/version.py`）
