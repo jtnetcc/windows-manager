@@ -39,12 +39,23 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          python tools/check_all.py --headless 2>&1 | tee check_all.log || {
-            # 没有 token 时下载不到日志，把失败脚本名写成注解（公开仓库可匿名读取）
-            detail=$(grep -A 8 '失败项' check_all.log | tr '\n' ' ' | cut -c1-600)
-            echo "::error title=check_all 失败::${detail}"
+          if python tools/check_all.py --headless > check_all.log 2>&1; then
+            tail -n 25 check_all.log
+          else
+            tail -n 40 check_all.log
+            # 公开仓库拿不到 Actions 日志：把失败行逐条写成注解，
+            # 通过 check-runs API 可匿名读取，定位不必靠猜
+            while IFS= read -r line; do
+              [ -n "$line" ] && echo "::error::${line}"
+            done < <(tail -n 12 check_all.log)
+            {
+              echo '### check_all 失败（最后 40 行）'
+              echo '```'
+              tail -n 40 check_all.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
             exit 1
-          }
+          fi
 
       - name: 上传自检日志（失败时）
         if: failure()
