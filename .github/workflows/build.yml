@@ -112,17 +112,26 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -euo pipefail
+          # 不用 set -e：gh 的报错要抓下来转成注解，否则无 token 时看不到日志
+          set -uo pipefail
+          fail() { echo "::error::$1"; exit 1; }
           ver="${GITHUB_REF_NAME#v}"
+          echo "gh: $(gh --version | head -1)"
+          gh auth status 2>&1 | sed 's/^/  /' || true
           python tools/release_notes.py --out release_notes.md
 
-          gh release create "$GITHUB_REF_NAME" \
+          if ! gh release create "$GITHUB_REF_NAME" \
             "dist/Windows系统管家-v${ver}.exe#便携版（单文件）" \
             "dist/Windows系统管家-v${ver}-setup.exe#安装包" \
             "dist/SHA256SUMS.txt" \
             --draft --prerelease \
             --title "Windows系统管家 v${ver}（内测）" \
-            --notes-file release_notes.md
+            --notes-file release_notes.md > release.log 2>&1; then
+            while IFS= read -r line; do
+              [ -n "$line" ] && echo "::error::gh release create: ${line}"
+            done < release.log
+            exit 1
+          fi
 
           # 公开前自检：资产数量、非空、草稿状态
           gh release view "$GITHUB_REF_NAME" --json isDraft,assets > release_check.json
